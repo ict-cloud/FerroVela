@@ -1,0 +1,26 @@
+[package]
+name = "ferrovela"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+regex = "1"
+url = "2"
+# For PAC file execution
+boa_engine = "0.19"
+boa_gc = "0.19"
+
+clap = { version = "4.5", features = ["derive"] }
+base64 = "0.22"
+
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"] }

@@ -1,0 +1,12 @@
+[proxy]
+port = 8080
+# pac_file = "proxy.pac" # Uncomment to use PAC
+
+[upstream]
+auth_type = "basic"
+username = "user"
+password = "password"
+proxy_url = "10.0.0.1:3128" # Fallback if no PAC
+
+[exceptions]
+hosts = ["localhost", "127.0.0.1", "*.local"]
