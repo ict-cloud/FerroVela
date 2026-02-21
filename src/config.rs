@@ -19,7 +19,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ProxyConfig {
     #[serde(default = "default_port")]
     pub port: u16,
@@ -30,7 +30,7 @@ fn default_port() -> u16 {
     3128
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct UpstreamConfig {
     pub auth_type: String, // "ntlm", "kerberos", "basic", "none"
     pub username: Option<String>,
