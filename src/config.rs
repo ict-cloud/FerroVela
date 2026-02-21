@@ -26,13 +26,8 @@ pub struct ProxyConfig {
     pub pac_file: Option<String>,
 }
 
-impl Default for ProxyConfig {
-    fn default() -> Self {
-        Self {
-            port: 8080,
-            pac_file: None,
-        }
-    }
+fn default_port() -> u16 {
+    3128
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

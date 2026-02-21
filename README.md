@@ -53,6 +53,7 @@ hosts = ["localhost", "127.0.0.1", "*.local"]
 - `hyper`: For low-level HTTP handling.
 - `tokio`: Asynchronous runtime.
 - `serde`/`toml`: Configuration parsing.
+- `iced`: For the graphical user interface.
 
 ## Running as a Service on MacOS
 
