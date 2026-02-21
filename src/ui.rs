@@ -2,11 +2,16 @@ use crate::config::{
     load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
 };
 use iced::widget::{button, column, pick_list, row, text, text_input};
-use iced::{executor, Application, Command, Element, Settings, Theme};
+use iced::{Element, Task};
 use std::fmt;
 
 pub fn run_ui(config_path: String) -> iced::Result {
-    ConfigEditor::run(Settings::with_flags(config_path))
+    iced::application(
+        "Ferrovela Configuration",
+        ConfigEditor::update,
+        ConfigEditor::view,
+    )
+    .run_with(move || ConfigEditor::new(config_path))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -79,13 +84,8 @@ pub enum Message {
     SavePressed,
 }
 
-impl Application for ConfigEditor {
-    type Executor = executor::Default;
-    type Message = Message;
-    type Theme = Theme;
-    type Flags = String;
-
-    fn new(path: String) -> (Self, Command<Message>) {
+impl ConfigEditor {
+    pub fn new(path: String) -> (Self, Task<Message>) {
         let config = load_config(&path).unwrap_or_default();
 
         (
@@ -120,15 +120,11 @@ impl Application for ConfigEditor {
                     .unwrap_or_default(),
                 status: String::new(),
             },
-            Command::none(),
+            Task::none(),
         )
     }
 
-    fn title(&self) -> String {
-        String::from("Ferrovela Configuration")
-    }
-
-    fn update(&mut self, message: Message) -> Command<Message> {
+    pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ProxyPortChanged(value) => self.proxy_port = value,
             Message::PacFileChanged(value) => self.pac_file = value,
@@ -139,7 +135,7 @@ impl Application for ConfigEditor {
             Message::ExceptionsHostsChanged(value) => self.exceptions_hosts = value,
             Message::SavePressed => {
                 // Construct config
-                let port = self.proxy_port.parse().unwrap_or(8080);
+                let port = self.proxy_port.parse().unwrap_or(3128);
                 let pac_file = if self.pac_file.trim().is_empty() {
                     None
                 } else {
@@ -196,15 +192,15 @@ impl Application for ConfigEditor {
                 }
             }
         }
-        Command::none()
+        Task::none()
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let content = column![
             text("Proxy Configuration").size(20),
             row![
                 text("Port:"),
-                text_input("8080", &self.proxy_port).on_input(Message::ProxyPortChanged)
+                text_input("3128", &self.proxy_port).on_input(Message::ProxyPortChanged)
             ]
             .spacing(10),
             row![
