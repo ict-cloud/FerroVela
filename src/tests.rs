@@ -46,6 +46,31 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
     fs::remove_file(file_path).expect("Failed to delete test config file");
 }
 
+#[test]
+fn test_default_port_config() {
+    let config_content = r#"
+[proxy]
+# port is omitted, should default to 3128
+pac_file = "http://wpad/wpad.dat"
+
+[upstream]
+auth_type = "basic"
+username = "user"
+password = "password"
+proxy_url = "10.0.0.1:3128"
+"#;
+    let file_path = "test_config_default_port.toml";
+    let mut file = fs::File::create(file_path).expect("Failed to create test config file");
+    file.write_all(config_content.as_bytes()).expect("Failed to write to test config file");
+
+    let config = load_config(file_path).expect("Failed to load config");
+
+    assert_eq!(config.proxy.port, 3128);
+
+    // Cleanup
+    fs::remove_file(file_path).expect("Failed to delete test config file");
+}
+
 #[tokio::test]
 async fn test_pac_engine() {
     let pac_content = r#"

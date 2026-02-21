@@ -29,7 +29,7 @@ Configuration can also be manually managed through a `config.toml` file.
 
 ```toml
 [proxy]
-port = 8080
+port = 3128
 pac_file = "http://wpad/wpad.dat" # or local path
 
 [upstream]

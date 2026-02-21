@@ -68,7 +68,7 @@ cargo build --release
 ### Configuration Example
 ```toml
 [proxy]
-port = 8080
+port = 3128
 pac_file = "http://wpad/wpad.dat" 
 
 [upstream]
