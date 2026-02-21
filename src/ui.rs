@@ -8,22 +8,22 @@ pub fn run_ui(config_path: String) -> iced::Result {
     ConfigEditor::run(Settings::with_flags(config_path))
 }
 
-struct ConfigEditor {
-    path: String,
+pub struct ConfigEditor {
+    pub path: String,
     // Form fields
-    proxy_port: String,
-    pac_file: String,
-    upstream_auth_type: String,
-    upstream_username: String,
-    upstream_password: String,
-    upstream_proxy_url: String,
-    exceptions_hosts: String,
+    pub proxy_port: String,
+    pub pac_file: String,
+    pub upstream_auth_type: String,
+    pub upstream_username: String,
+    pub upstream_password: String,
+    pub upstream_proxy_url: String,
+    pub exceptions_hosts: String,
     // Status message
-    status: String,
+    pub status: String,
 }
 
 #[derive(Debug, Clone)]
-enum Message {
+pub enum Message {
     ProxyPortChanged(String),
     PacFileChanged(String),
     UpstreamAuthTypeChanged(String),
