@@ -33,6 +33,12 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
         -   Upstream proxy details (URL, Auth type, Credentials).
         -   Exception rules (Hosts/Domains to bypass proxy).
 
+4.  **User Interface (`src/ui.rs`)**:
+    -   Built using **Iced** (`iced`) for a cross-platform GUI.
+    -   Provides a form-based editor for `config.toml`.
+    -   Launched via the `--ui` command-line flag.
+    -   Synchronous save to disk using `serde` and `toml`.
+
 ## Current Status & Capabilities
 
 -   [x] **HTTPS Tunneling**: Full support for `CONNECT` method.

@@ -1,13 +1,16 @@
 use clap::Parser;
 use log::{error, info};
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 mod config;
 mod pac;
 mod proxy;
+mod ui;
 
-use crate::config::{load_config, Config};
+#[cfg(test)]
+mod tests;
+
+use crate::config::load_config;
 use crate::pac::PacEngine;
 use crate::proxy::Proxy;
 
@@ -19,15 +22,33 @@ mod tests;
 struct Args {
     #[arg(short, long, default_value = "config.toml")]
     config: String,
+
+    /// Launch the configuration UI
+    #[arg(long)]
+    ui: bool,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     env_logger::init();
     let args = Args::parse();
 
-    info!("Loading configuration from {}", args.config);
-    let config = match load_config(&args.config) {
+    if args.ui {
+        match ui::run_ui(args.config) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                error!("UI Error: {}", e);
+                Err(Box::new(e))
+            }
+        }
+    } else {
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(run_proxy(args.config))
+    }
+}
+
+async fn run_proxy(config_path: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    info!("Loading configuration from {}", config_path);
+    let config = match load_config(&config_path) {
         Ok(c) => Arc::new(c),
         Err(e) => {
             error!("Failed to load config: {}", e);

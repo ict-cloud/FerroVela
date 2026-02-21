@@ -14,7 +14,18 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 
 ## Configuration
 
-Configuration is managed through a `config.toml` file.
+### Graphical Interface
+
+FerroVela includes a simple graphical interface for managing the configuration.
+
+To launch the configuration editor:
+```bash
+./target/release/ferrovela --ui
+```
+
+### Manual Configuration
+
+Configuration can also be manually managed through a `config.toml` file.
 
 ```toml
 [proxy]
@@ -42,6 +53,7 @@ hosts = ["localhost", "127.0.0.1", "*.local"]
 - `hyper`: For low-level HTTP handling.
 - `tokio`: Asynchronous runtime.
 - `serde`/`toml`: Configuration parsing.
+- `iced`: For the graphical user interface.
 
 ## Running as a Service on MacOS
 
