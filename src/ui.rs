@@ -1,11 +1,56 @@
 use crate::config::{
     load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
 };
-use iced::widget::{button, column, row, text, text_input};
+use iced::widget::{button, column, pick_list, row, text, text_input};
 use iced::{executor, Application, Command, Element, Settings, Theme};
+use std::fmt;
 
 pub fn run_ui(config_path: String) -> iced::Result {
     ConfigEditor::run(Settings::with_flags(config_path))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AuthType {
+    #[default]
+    None,
+    Basic,
+    Ntlm,
+    Kerberos,
+}
+
+impl AuthType {
+    pub const ALL: [AuthType; 4] = [
+        AuthType::None,
+        AuthType::Basic,
+        AuthType::Ntlm,
+        AuthType::Kerberos,
+    ];
+}
+
+impl fmt::Display for AuthType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                AuthType::None => "none",
+                AuthType::Basic => "basic",
+                AuthType::Ntlm => "ntlm",
+                AuthType::Kerberos => "kerberos",
+            }
+        )
+    }
+}
+
+impl From<&str> for AuthType {
+    fn from(s: &str) -> Self {
+        match s {
+            "basic" => AuthType::Basic,
+            "ntlm" => AuthType::Ntlm,
+            "kerberos" => AuthType::Kerberos,
+            _ => AuthType::None,
+        }
+    }
 }
 
 pub struct ConfigEditor {
@@ -13,7 +58,7 @@ pub struct ConfigEditor {
     // Form fields
     pub proxy_port: String,
     pub pac_file: String,
-    pub upstream_auth_type: String,
+    pub upstream_auth_type: AuthType,
     pub upstream_username: String,
     pub upstream_password: String,
     pub upstream_proxy_url: String,
@@ -26,7 +71,7 @@ pub struct ConfigEditor {
 pub enum Message {
     ProxyPortChanged(String),
     PacFileChanged(String),
-    UpstreamAuthTypeChanged(String),
+    UpstreamAuthTypeChanged(AuthType),
     UpstreamUsernameChanged(String),
     UpstreamPasswordChanged(String),
     UpstreamProxyUrlChanged(String),
@@ -51,8 +96,8 @@ impl Application for ConfigEditor {
                 upstream_auth_type: config
                     .upstream
                     .as_ref()
-                    .map(|u| u.auth_type.clone())
-                    .unwrap_or_else(|| "none".to_string()),
+                    .map(|u| AuthType::from(u.auth_type.as_str()))
+                    .unwrap_or_default(),
                 upstream_username: config
                     .upstream
                     .as_ref()
@@ -101,14 +146,14 @@ impl Application for ConfigEditor {
                     Some(self.pac_file.trim().to_string())
                 };
 
-                let upstream = if self.upstream_auth_type == "none"
+                let upstream = if self.upstream_auth_type == AuthType::None
                     && self.upstream_username.is_empty()
                     && self.upstream_proxy_url.is_empty()
                 {
                     None
                 } else {
                     Some(UpstreamConfig {
-                        auth_type: self.upstream_auth_type.clone(),
+                        auth_type: self.upstream_auth_type.to_string(),
                         username: if self.upstream_username.trim().is_empty() {
                             None
                         } else {
@@ -170,8 +215,11 @@ impl Application for ConfigEditor {
             text("Upstream Configuration").size(20),
             row![
                 text("Auth Type:"),
-                text_input("basic/ntlm/none", &self.upstream_auth_type)
-                    .on_input(Message::UpstreamAuthTypeChanged)
+                pick_list(
+                    &AuthType::ALL[..],
+                    Some(self.upstream_auth_type),
+                    Message::UpstreamAuthTypeChanged
+                )
             ]
             .spacing(10),
             row![

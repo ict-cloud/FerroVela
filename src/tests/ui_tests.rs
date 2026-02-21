@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::ui::{ConfigEditor, Message};
+    use crate::ui::{AuthType, ConfigEditor, Message};
     use iced::Application;
     use std::fs;
     use tempfile::NamedTempFile;
@@ -15,7 +15,7 @@ mod tests {
         // Assert initial state (defaults)
         assert_eq!(editor.proxy_port, "8080"); // Default port
         assert_eq!(editor.pac_file, "");
-        assert_eq!(editor.upstream_auth_type, "none");
+        assert_eq!(editor.upstream_auth_type, AuthType::None);
     }
 
     #[test]
@@ -29,8 +29,8 @@ mod tests {
         assert_eq!(editor.proxy_port, "9090");
 
         // Test Auth Type Change
-        let _ = editor.update(Message::UpstreamAuthTypeChanged("basic".to_string()));
-        assert_eq!(editor.upstream_auth_type, "basic");
+        let _ = editor.update(Message::UpstreamAuthTypeChanged(AuthType::Basic));
+        assert_eq!(editor.upstream_auth_type, AuthType::Basic);
     }
 
     #[test]
