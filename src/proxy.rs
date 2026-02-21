@@ -1,15 +1,15 @@
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use base64::prelude::*;
 use bytes::Bytes;
-use http_body_util::{BodyExt, Empty, Full};
+use http_body_util::Empty;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::upgrade::Upgraded;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -183,7 +183,6 @@ async fn connect_via_upstream(
             "basic" => {
                 if let (Some(u), Some(p)) = (&upstream_conf.username, &upstream_conf.password) {
                     let creds = format!("{}:{}", u, p);
-                    use base64::prelude::*;
                     let encoded = BASE64_STANDARD.encode(creds);
                     connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
                 }
