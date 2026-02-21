@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::ui::{AuthType, ConfigEditor, Message};
-    use iced::Application;
     use std::fs;
     use tempfile::NamedTempFile;
 
@@ -13,7 +12,7 @@ mod tests {
         let (editor, _) = ConfigEditor::new(path.clone());
 
         // Assert initial state (defaults)
-        assert_eq!(editor.proxy_port, "8080"); // Default port
+        assert_eq!(editor.proxy_port, "3128"); // Default port
         assert_eq!(editor.pac_file, "");
         assert_eq!(editor.upstream_auth_type, AuthType::None);
     }

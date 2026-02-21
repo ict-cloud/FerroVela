@@ -19,11 +19,20 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProxyConfig {
     #[serde(default = "default_port")]
     pub port: u16,
     pub pac_file: Option<String>,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            port: default_port(),
+            pac_file: None,
+        }
+    }
 }
 
 fn default_port() -> u16 {
