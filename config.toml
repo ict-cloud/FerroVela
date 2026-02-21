@@ -1,5 +1,5 @@
 [proxy]
-port = 8080
+port = 3128
 # pac_file = "proxy.pac" # Uncomment to use PAC
 
 [upstream]
