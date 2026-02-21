@@ -7,6 +7,9 @@ mod pac;
 mod proxy;
 mod ui;
 
+#[cfg(test)]
+mod tests;
+
 use crate::config::load_config;
 use crate::pac::PacEngine;
 use crate::proxy::Proxy;
