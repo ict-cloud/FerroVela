@@ -7,11 +7,12 @@ use std::fmt;
 
 pub fn run_ui(config_path: String) -> iced::Result {
     iced::application(
-        "Ferrovela Configuration",
+        move || ConfigEditor::new(config_path.clone()),
         ConfigEditor::update,
         ConfigEditor::view,
     )
-    .run_with(move || ConfigEditor::new(config_path))
+    .title("Ferrovela Configuration")
+    .run()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
