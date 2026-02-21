@@ -29,7 +29,7 @@ Configuration can also be manually managed through a `config.toml` file.
 
 ```toml
 [proxy]
-port = 8080
+port = 3128
 pac_file = "http://wpad/wpad.dat" # or local path
 
 [upstream]
@@ -54,3 +54,25 @@ hosts = ["localhost", "127.0.0.1", "*.local"]
 - `tokio`: Asynchronous runtime.
 - `serde`/`toml`: Configuration parsing.
 - `iced`: For the graphical user interface.
+
+## Running as a Service on MacOS
+
+To run FerroVela as a background service on MacOS using `launchd`, you can use the provided installation script.
+
+1.  **Run the install script**:
+    ```bash
+    ./service/macos/install.sh
+    ```
+
+    This script will:
+    -   Build the release binary.
+    -   Install the binary to `~/.local/bin/ferrovela`.
+    -   Install the configuration to `~/.config/ferrovela/config.toml` (if not already present).
+    -   Create and load a `launchd` plist at `~/Library/LaunchAgents/com.ferrovela.plist`.
+
+2.  **Manage the service**:
+    -   **Stop**: `launchctl unload ~/Library/LaunchAgents/com.ferrovela.plist`
+    -   **Start**: `launchctl load ~/Library/LaunchAgents/com.ferrovela.plist`
+    -   **Logs**: Check `/tmp/ferrovela.log` and `/tmp/ferrovela.err`.
+
+Ensure `~/.local/bin` is in your `PATH` if you want to run `ferrovela` manually from the command line.

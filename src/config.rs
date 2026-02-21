@@ -21,20 +21,16 @@ impl Default for Config {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProxyConfig {
+    #[serde(default = "default_port")]
     pub port: u16,
     pub pac_file: Option<String>,
 }
 
-impl Default for ProxyConfig {
-    fn default() -> Self {
-        Self {
-            port: 8080,
-            pac_file: None,
-        }
-    }
+fn default_port() -> u16 {
+    3128
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct UpstreamConfig {
     pub auth_type: String, // "ntlm", "kerberos", "basic", "none"
     pub username: Option<String>,

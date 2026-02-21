@@ -14,6 +14,9 @@ use crate::config::load_config;
 use crate::pac::PacEngine;
 use crate::proxy::Proxy;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {

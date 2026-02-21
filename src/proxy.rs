@@ -33,7 +33,13 @@ impl Proxy {
         let addr = SocketAddr::from(([127, 0, 0, 1], self.config.proxy.port));
         let listener = TcpListener::bind(addr).await?;
         info!("Listening on http://{}", addr);
+        self.run_with_listener(listener).await
+    }
 
+    pub async fn run_with_listener(
+        &self,
+        listener: TcpListener,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             let (stream, _) = listener.accept().await?;
             let io = TokioIo::new(stream);
