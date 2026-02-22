@@ -14,10 +14,11 @@ impl log::Log for SimpleLogger {
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
-            let msg = format!("{} - {}\n", record.level(), record.args());
-            println!("{}", msg.trim()); // Print to stdout
+            // More efficient formatting - single string allocation
+            eprintln!("{} - {}", record.level(), record.args());
             if let Ok(mut file) = self.file.lock() {
-                let _ = file.write_all(msg.as_bytes());
+                // Use writeln! for better efficiency
+                let _ = writeln!(file, "{} - {}", record.level(), record.args());
             }
         }
     }
@@ -41,7 +42,16 @@ pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         file: Mutex::new(file),
     };
 
-    log::set_boxed_logger(Box::new(logger))
-        .map(|()| log::set_max_level(log::LevelFilter::Info))
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+    let boxed_logger = Box::new(logger);
+    let static_logger: &'static SimpleLogger = Box::leak(boxed_logger);
+
+    log::set_logger(static_logger).map_err(|e| {
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e.to_string(),
+        )) as Box<dyn std::error::Error + Send + Sync>
+    })?;
+
+    log::set_max_level(log::LevelFilter::Info);
+    Ok(())
 }

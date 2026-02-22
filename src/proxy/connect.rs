@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use base64::prelude::*;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use http_body_util::combinators::BoxBody;
 use hyper::upgrade::Upgraded;
 use hyper::{Request, Response, StatusCode};
@@ -60,8 +60,8 @@ async fn tunnel(
 }
 
 async fn connect_direct(upgraded: &mut TokioIo<Upgraded>, target: &str) -> std::io::Result<()> {
-    let mut server = TcpStream::connect(target).await.expect("Failed to connect to target");
-    let _ = tokio::io::copy_bidirectional(upgraded, &mut server).await.expect("Failed to copy bidirectional");
+    let mut server = TcpStream::connect(target).await?;
+    tokio::io::copy_bidirectional(upgraded, &mut server).await?;
     Ok(())
 }
 
@@ -78,7 +78,7 @@ async fn connect_via_upstream(
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
-    let mut server = TcpStream::connect(addr).await.expect("Failed to connect to upstream");
+    let mut server = TcpStream::connect(addr).await?;
 
     // Send CONNECT request to upstream
     let mut connect_req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
@@ -100,18 +100,16 @@ async fn connect_via_upstream(
     connect_req.push_str("\r\n"); // End of headers
     server.write_all(connect_req.as_bytes()).await?;
 
-    // Read response line
-    let mut buf = [0u8; 4096];
-    let mut header_buf = Vec::new();
+    // Read response headers efficiently using BytesMut
+    let mut header_buf = BytesMut::with_capacity(4096);
     loop {
-        let n = server.read(&mut buf).await?;
+        let n = server.read_buf(&mut header_buf).await?;
         if n == 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "Upstream closed connection",
             ));
         }
-        header_buf.extend_from_slice(&buf[..n]);
         if let Some(pos) = find_subsequence(&header_buf, b"\r\n\r\n") {
             let body_start = pos + 4;
             let headers_str = String::from_utf8_lossy(&header_buf[..pos]);
