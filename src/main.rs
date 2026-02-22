@@ -7,6 +7,7 @@ mod logger;
 mod pac;
 mod proxy;
 mod ui;
+mod auth;
 
 #[cfg(test)]
 mod tests;
