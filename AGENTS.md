@@ -9,9 +9,11 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
 
 ### Core Components
 
-1.  **Proxy Server (`src/proxy.rs`)**:
+1.  **Proxy Server (`src/proxy/`)**:
     -   Uses `hyper::server::conn::http1` to handle incoming connections.
+    -   **Modular Design**: Logic is split into `connect.rs` (HTTPS tunneling) and `nonconnect.rs` (standard HTTP proxying).
     -   **HTTPS/Tunneling**: Implements the `CONNECT` method to create TCP tunnels to target servers or upstream proxies.
+    -   **Standard HTTP**: Implements standard HTTP forwarding (GET, POST, etc.) for non-SSL traffic.
     -   **Upstream Chaining**: Can forward traffic to a parent proxy defined in `config.toml` or returned by the PAC script.
     -   **Authentication**: Currently supports **Basic Authentication** for upstream proxies.
 
@@ -42,6 +44,7 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
 ## Current Status & Capabilities
 
 -   [x] **HTTPS Tunneling**: Full support for `CONNECT` method.
+-   [x] **Standard HTTP Proxying**: Support for GET, POST, etc.
 -   [x] **PAC Support**: 
     -   Remote (HTTP) and Local file loading.
     -   `FindProxyForURL` execution.
@@ -51,7 +54,6 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
 -   [x] **Upstream Auth**:
     -   **Basic**: Implemented.
     -   **NTLM/Kerberos**: *Not Implemented* (Architecture allows for it, but handshake logic is missing).
--   [ ] **Plain HTTP Proxying**: Currently returns 501 Not Implemented for non-CONNECT requests (standard HTTP proxying). Focus is on HTTPS tunneling.
 
 ## Usage
 
@@ -91,4 +93,3 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 1.  Implement actual DNS resolution for `dnsResolve` in PAC.
 2.  Implement `myIpAddress` to return real interface IP.
 3.  Add full NTLM/Kerberos handshake support for corporate proxies.
-4.  Implement standard HTTP forwarding (GET/POST/etc) for non-SSL traffic.
