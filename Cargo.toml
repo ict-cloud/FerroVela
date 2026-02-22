@@ -15,17 +15,15 @@ serde = { version = "1", features = ["derive"] }
 toml = "1.0"
 log = "0.4"
 anyhow = "1"
-regex = "1"
 url = "2"
 # For PAC file execution
 boa_engine = "0.21"
-boa_gc = "0.21"
 
 clap = { version = "4.5", features = ["derive"] }
 base64 = "0.22"
 
 # Async HTTP client without blocking feature
-reqwest = { version = "0.13", features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 iced = { version = "0.14", features = ["tokio"] }
 
 [dev-dependencies]

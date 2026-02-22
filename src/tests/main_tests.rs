@@ -1,11 +1,11 @@
-use crate::config::{load_config, Config, ProxyConfig, UpstreamConfig, ExceptionsConfig};
+use crate::config::{load_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig};
 use crate::pac::PacEngine;
 use crate::proxy::Proxy;
 use std::fs;
 use std::io::Write;
 use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 #[test]
 fn test_load_config() {
@@ -25,12 +25,16 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 "#;
     let file_path = "test_config.toml";
     let mut file = fs::File::create(file_path).expect("Failed to create test config file");
-    file.write_all(config_content.as_bytes()).expect("Failed to write to test config file");
+    file.write_all(config_content.as_bytes())
+        .expect("Failed to write to test config file");
 
     let config = load_config(file_path).expect("Failed to load config");
 
     assert_eq!(config.proxy.port, 8080);
-    assert_eq!(config.proxy.pac_file, Some("http://wpad/wpad.dat".to_string()));
+    assert_eq!(
+        config.proxy.pac_file,
+        Some("http://wpad/wpad.dat".to_string())
+    );
 
     let upstream = config.upstream.unwrap();
     assert_eq!(upstream.auth_type, "basic");
@@ -61,7 +65,8 @@ proxy_url = "10.0.0.1:3128"
 "#;
     let file_path = "test_config_default_port.toml";
     let mut file = fs::File::create(file_path).expect("Failed to create test config file");
-    file.write_all(config_content.as_bytes()).expect("Failed to write to test config file");
+    file.write_all(config_content.as_bytes())
+        .expect("Failed to write to test config file");
 
     let config = load_config(file_path).expect("Failed to load config");
 
@@ -82,20 +87,32 @@ async fn test_pac_engine() {
     "#;
     let pac_path = "test.pac";
     let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
-    file.write_all(pac_content.as_bytes()).expect("Failed to write PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
 
-    let engine = PacEngine::new(pac_path).expect("Failed to create PacEngine");
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
 
     // Test localhost -> DIRECT
-    let proxy = engine.find_proxy("http://localhost/foo", "localhost").await.expect("PAC failed");
+    let proxy = engine
+        .find_proxy("http://localhost/foo", "localhost")
+        .await
+        .expect("PAC failed");
     assert_eq!(proxy, "DIRECT");
 
     // Test internal -> PROXY 10.0.0.1:8080
-    let proxy = engine.find_proxy("http://foo.internal/bar", "foo.internal").await.expect("PAC failed");
+    let proxy = engine
+        .find_proxy("http://foo.internal/bar", "foo.internal")
+        .await
+        .expect("PAC failed");
     assert_eq!(proxy, "PROXY 10.0.0.1:8080");
 
     // Test other -> PROXY 192.168.1.1:3128
-    let proxy = engine.find_proxy("http://google.com", "google.com").await.expect("PAC failed");
+    let proxy = engine
+        .find_proxy("http://google.com", "google.com")
+        .await
+        .expect("PAC failed");
     assert_eq!(proxy, "PROXY 192.168.1.1:3128");
 
     fs::remove_file(pac_path).expect("Failed to remove PAC file");
@@ -103,7 +120,9 @@ async fn test_pac_engine() {
 
 // Helpers
 async fn start_target_server() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind target");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind target");
     let port = listener.local_addr().unwrap().port();
 
     tokio::spawn(async move {
@@ -129,12 +148,20 @@ async fn start_target_server() -> u16 {
     port
 }
 
-async fn start_proxy(upstream: Option<UpstreamConfig>, exceptions: Option<ExceptionsConfig>) -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind proxy");
+async fn start_proxy(
+    upstream: Option<UpstreamConfig>,
+    exceptions: Option<ExceptionsConfig>,
+) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind proxy");
     let port = listener.local_addr().unwrap().port();
 
     let config = Config {
-        proxy: ProxyConfig { port, pac_file: None },
+        proxy: ProxyConfig {
+            port,
+            pac_file: None,
+        },
         upstream,
         exceptions,
     };
@@ -152,9 +179,14 @@ async fn test_proxy_direct() {
     let target_port = start_target_server().await;
     let proxy_port = start_proxy(None, None).await;
 
-    let mut client = TcpStream::connect(format!("127.0.0.1:{}", proxy_port)).await.expect("Failed to connect to proxy");
+    let mut client = TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+        .await
+        .expect("Failed to connect to proxy");
 
-    let connect_req = format!("CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n", target_port, target_port);
+    let connect_req = format!(
+        "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+        target_port, target_port
+    );
     client.write_all(connect_req.as_bytes()).await.unwrap();
 
     let mut buf = [0; 1024];
@@ -187,7 +219,9 @@ async fn test_proxy_upstream() {
                     if req.starts_with("CONNECT") {
                         socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
 
-                        let mut target = TcpStream::connect(format!("127.0.0.1:{}", target_port)).await.unwrap();
+                        let mut target = TcpStream::connect(format!("127.0.0.1:{}", target_port))
+                            .await
+                            .unwrap();
                         let _ = tokio::io::copy_bidirectional(&mut socket, &mut target).await;
                     }
                 });
@@ -204,14 +238,23 @@ async fn test_proxy_upstream() {
 
     let proxy_port = start_proxy(Some(upstream_config), None).await;
 
-    let mut client = TcpStream::connect(format!("127.0.0.1:{}", proxy_port)).await.unwrap();
-    let connect_req = format!("CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n", target_port, target_port);
+    let mut client = TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+        .await
+        .unwrap();
+    let connect_req = format!(
+        "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+        target_port, target_port
+    );
     client.write_all(connect_req.as_bytes()).await.unwrap();
 
     let mut buf = [0; 1024];
     let n = client.read(&mut buf).await.unwrap();
     let resp = String::from_utf8_lossy(&buf[..n]);
-    assert!(resp.contains("200"), "Expected 200 OK from upstream via proxy, got {}", resp);
+    assert!(
+        resp.contains("200"),
+        "Expected 200 OK from upstream via proxy, got {}",
+        resp
+    );
 
     client.write_all(b"UpstreamTest").await.unwrap();
     let n = client.read(&mut buf).await.unwrap();
@@ -225,9 +268,11 @@ async fn test_proxy_exceptions() {
     // Upstream that fails (binds but sends 500)
     let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let upstream_port = upstream_listener.local_addr().unwrap().port();
-     tokio::spawn(async move {
+    tokio::spawn(async move {
         while let Ok((mut socket, _)) = upstream_listener.accept().await {
-             let _ = socket.write_all(b"HTTP/1.1 500 Internal Server Error\r\n\r\n").await;
+            let _ = socket
+                .write_all(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
+                .await;
         }
     });
 
@@ -244,9 +289,14 @@ async fn test_proxy_exceptions() {
 
     let proxy_port = start_proxy(Some(upstream_config), Some(exceptions)).await;
 
-    let mut client = TcpStream::connect(format!("127.0.0.1:{}", proxy_port)).await.unwrap();
+    let mut client = TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+        .await
+        .unwrap();
     // Use 127.0.0.1 to match exception
-    let connect_req = format!("CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n", target_port, target_port);
+    let connect_req = format!(
+        "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\r\n",
+        target_port, target_port
+    );
     client.write_all(connect_req.as_bytes()).await.unwrap();
 
     let mut buf = [0; 1024];
@@ -259,5 +309,9 @@ async fn test_proxy_exceptions() {
 
     client.write_all(b"ExceptionTest").await.unwrap();
     let n = client.read(&mut buf).await.unwrap();
-    assert_eq!(&buf[..n], b"ExceptionTest", "Traffic should flow direct to target");
+    assert_eq!(
+        &buf[..n],
+        b"ExceptionTest",
+        "Traffic should flow direct to target"
+    );
 }

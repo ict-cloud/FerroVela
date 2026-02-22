@@ -60,12 +60,8 @@ async fn tunnel(
 }
 
 async fn connect_direct(upgraded: &mut TokioIo<Upgraded>, target: &str) -> std::io::Result<()> {
-    let mut server = TcpStream::connect(target)
-        .await
-        .expect("Failed to connect to target");
-    let _ = tokio::io::copy_bidirectional(upgraded, &mut server)
-        .await
-        .expect("Failed to copy bidirectional");
+    let mut server = TcpStream::connect(target).await?;
+    tokio::io::copy_bidirectional(upgraded, &mut server).await?;
     Ok(())
 }
 
@@ -82,9 +78,7 @@ async fn connect_via_upstream(
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
-    let mut server = TcpStream::connect(addr)
-        .await
-        .expect("Failed to connect to upstream");
+    let mut server = TcpStream::connect(addr).await?;
 
     // Send CONNECT request to upstream
     let mut connect_req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);

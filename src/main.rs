@@ -56,7 +56,7 @@ async fn run_proxy(config_path: String) -> Result<(), Box<dyn std::error::Error 
 
     let pac_engine = if let Some(path) = &config.proxy.pac_file {
         info!("Loading PAC file from {}", path);
-        match PacEngine::new(path) {
+        match PacEngine::new(path).await {
             Ok(engine) => Some(engine),
             Err(e) => {
                 error!("Failed to load PAC file: {}", e);

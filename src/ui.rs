@@ -4,7 +4,7 @@ use crate::config::{
 use crate::pac::PacEngine;
 use crate::proxy::Proxy;
 use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
-use iced::{Element, Subscription, Task, Color, Alignment};
+use iced::{Alignment, Color, Element, Subscription, Task};
 use log::{error, info};
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
@@ -267,22 +267,21 @@ impl ConfigEditor {
                     let config = Arc::new(self.build_config());
                     let pac_path = config.proxy.pac_file.clone();
 
-                    let pac_engine = if let Some(path) = pac_path {
-                        info!("Loading PAC file from {}", path);
-                        match PacEngine::new(&path) {
-                            Ok(engine) => Some(engine),
-                            Err(e) => {
-                                error!("Failed to load PAC file: {}", e);
-                                self.status = format!("PAC Error: {}", e);
-                                None
-                            }
-                        }
-                    } else {
-                        None
-                    };
-
-                    let proxy = Proxy::new(config.clone(), pac_engine);
                     let handle = tokio::spawn(async move {
+                        let pac_engine = if let Some(path) = pac_path {
+                            info!("Loading PAC file from {}", path);
+                            match PacEngine::new(&path).await {
+                                Ok(engine) => Some(engine),
+                                Err(e) => {
+                                    error!("Failed to load PAC file: {}", e);
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+
+                        let proxy = Proxy::new(config.clone(), pac_engine);
                         if let Err(e) = proxy.run().await {
                             error!("Proxy error: {}", e);
                         }
