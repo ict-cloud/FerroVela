@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use base64::prelude::*;
 use bytes::{Bytes, BytesMut};
 use http_body_util::combinators::BoxBody;
 use hyper::upgrade::Upgraded;
@@ -10,6 +9,7 @@ use log::{debug, error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use crate::auth::UpstreamAuthenticator;
 use crate::config::Config;
 use crate::pac::PacEngine;
 use crate::proxy::{empty, resolve_proxy};
@@ -18,12 +18,13 @@ pub async fn handle(
     req: Request<hyper::body::Incoming>,
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     if let Some(addr) = req.uri().authority().map(|a| a.to_string()) {
         tokio::task::spawn(async move {
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
-                    if let Err(e) = tunnel(upgraded, addr, config, pac).await {
+                    if let Err(e) = tunnel(upgraded, addr, config, pac, authenticator).await {
                         error!("Tunnel error: {}", e);
                     };
                 }
@@ -44,6 +45,7 @@ async fn tunnel(
     target: String,
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> std::io::Result<()> {
     let mut upgraded = TokioIo::new(upgraded);
 
@@ -52,7 +54,7 @@ async fn tunnel(
 
     if let Some(proxy_addr) = upstream_proxy {
         debug!("Connecting via upstream: {}", proxy_addr);
-        connect_via_upstream(&mut upgraded, &target, &proxy_addr, &config).await
+        connect_via_upstream(&mut upgraded, &target, &proxy_addr, &config, authenticator).await
     } else {
         debug!("Connecting direct: {}", target);
         connect_direct(&mut upgraded, &target).await
@@ -69,7 +71,8 @@ async fn connect_via_upstream(
     upgraded: &mut TokioIo<Upgraded>,
     target: &str,
     proxy_addr: &str,
-    config: &Arc<Config>,
+    _config: &Arc<Config>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> std::io::Result<()> {
     // Connect to upstream proxy
     // proxy_addr might be host:port or scheme://host:port
@@ -84,16 +87,14 @@ async fn connect_via_upstream(
     let mut connect_req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
 
     // Auth Logic
-    if let Some(upstream_conf) = &config.upstream {
-        match upstream_conf.auth_type.as_str() {
-            "basic" => {
-                if let (Some(u), Some(p)) = (&upstream_conf.username, &upstream_conf.password) {
-                    let creds = format!("{}:{}", u, p);
-                    let encoded = BASE64_STANDARD.encode(creds);
-                    connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
-                }
+    if let Some(auth) = authenticator {
+        match auth.get_auth_header() {
+            Ok(header_val) => {
+                connect_req.push_str(&format!("Proxy-Authorization: {}\r\n", header_val));
             }
-            _ => {}
+            Err(e) => {
+                error!("Failed to generate auth header: {}", e);
+            }
         }
     }
 
