@@ -15,7 +15,7 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
     -   **HTTPS/Tunneling**: Implements the `CONNECT` method to create TCP tunnels to target servers or upstream proxies.
     -   **Standard HTTP**: Implements standard HTTP forwarding (GET, POST, etc.) for non-SSL traffic.
     -   **Upstream Chaining**: Can forward traffic to a parent proxy defined in `config.toml` or returned by the PAC script.
-    -   **Authentication**: Currently supports **Basic Authentication** for upstream proxies.
+    -   **Authentication**: Currently supports **Basic Authentication** and **Kerberos Authentication** for upstream proxies.
 
 2.  **PAC Engine (`src/pac.rs`)**:
     -   Uses **Boa (`boa_engine`)**, a pure Rust JavaScript engine, to execute PAC files.
@@ -54,6 +54,9 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
 -   [x] **Upstream Auth**:
     -   **Basic**: Implemented.
     -   **NTLM/Kerberos**: *Not Implemented* (Architecture allows for it, but handshake logic is missing).
+    -   **Kerberos**: Implemented (Optimistic, MacOS First).
+    -   **NTLM**: *Not Implemented*.
+-   [ ] **Plain HTTP Proxying**: Currently returns 501 Not Implemented for non-CONNECT requests (standard HTTP proxying). Focus is on HTTPS tunneling.
 
 ## Usage
 
@@ -88,6 +91,20 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 -   **Boa & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local Boa engine. Any new PAC functions must be registered inside the spawned thread closure in `src/pac.rs`.
 -   **Error Handling**: The application uses `anyhow` for error propagation and `log` for observability.
 -   **Security**: Credentials in `config.toml` are read as plain text.
+
+## Authentication Implementation
+
+### Kerberos (MacOS First)
+- Implemented using `libgssapi` (GSSAPI wrapper).
+- Uses **Optimistic Authentication**: The proxy immediately sends a `Proxy-Authorization: Negotiate <token>` header with the initial context token.
+- **SPN Construction**: The Service Principal Name is derived from the upstream proxy hostname: `HTTP@<hostname>`.
+- **Assumptions**:
+    - The host machine has a valid Kerberos TGT (via `kinit` or domain login).
+    - The upstream proxy accepts the initial token.
+    - Full handshake (handling 407 challenges) is NOT yet implemented.
+- **Testing**:
+    - Unit tests use `MockKerberosAuthenticator` to verify flow.
+    - Integration tests verify `KerberosAuthenticator` initialization attempts (which fail gracefully in sandbox without TGT).
 
 ## Future Work
 1.  Implement actual DNS resolution for `dnsResolve` in PAC.
