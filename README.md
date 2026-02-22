@@ -23,6 +23,13 @@ To launch the configuration editor:
 ./target/release/ferrovela --ui
 ```
 
+### Kerberos Authentication
+
+To use Kerberos authentication:
+1. Ensure your machine is joined to the domain or you have a valid Kerberos ticket (obtainable via `kinit`).
+2. Set `auth_type = "kerberos"` in `config.toml`.
+3. FerroVela will automatically use the cached credentials to authenticate with the upstream proxy.
+
 ### Manual Configuration
 
 Configuration can also be manually managed through a `config.toml` file.
@@ -33,9 +40,10 @@ port = 3128
 pac_file = "http://wpad/wpad.dat" # or local path
 
 [upstream]
-auth_type = "ntlm" # or "kerberos", "basic", "none"
-username = "user"
-password = "password" # Optional, can prompt or use system creds if supported
+auth_type = "kerberos" # or "basic", "none"
+username = "user" # Required for "basic"
+password = "password" # Required for "basic"
+# For "kerberos", username/password are ignored. The system's active Kerberos ticket is used.
 
 [exceptions]
 # bypass upstream proxy for these
@@ -54,6 +62,7 @@ hosts = ["localhost", "127.0.0.1", "*.local"]
 - `tokio`: Asynchronous runtime.
 - `serde`/`toml`: Configuration parsing.
 - `iced`: For the graphical user interface.
+- `libgssapi`: For Kerberos/GSSAPI integration.
 
 ## Running as a Service on MacOS
 

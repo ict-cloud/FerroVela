@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use base64::prelude::*;
 use bytes::Bytes;
 use http_body_util::Empty;
 use hyper::server::conn::http1;
@@ -13,6 +12,9 @@ use log::{debug, error, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::auth::basic::BasicAuthenticator;
+use crate::auth::kerberos::KerberosAuthenticator;
+use crate::auth::UpstreamAuthenticator;
 use crate::config::Config;
 use crate::pac::PacEngine;
 
@@ -174,26 +176,43 @@ async fn connect_via_upstream(
     // Connect to upstream proxy
     // proxy_addr might be host:port or scheme://host:port
     // simple heuristic: remove scheme
-    let addr = proxy_addr
+    let upstream_addr = proxy_addr
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
-    let mut server = TcpStream::connect(addr).await?;
+    let mut server = TcpStream::connect(upstream_addr).await?;
 
     // Send CONNECT request to upstream
     let mut connect_req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
 
     // Auth Logic
     if let Some(upstream_conf) = &config.upstream {
-        match upstream_conf.auth_type.as_str() {
+        let auth_header_value = match upstream_conf.auth_type.as_str() {
             "basic" => {
                 if let (Some(u), Some(p)) = (&upstream_conf.username, &upstream_conf.password) {
-                    let creds = format!("{}:{}", u, p);
-                    let encoded = BASE64_STANDARD.encode(creds);
-                    connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+                    let auth = BasicAuthenticator::new(u.clone(), p.clone());
+                    auth.get_auth_header().ok()
+                } else {
+                    None
                 }
             }
-            _ => {}
+            "kerberos" => {
+                // upstream_addr is "host:port", extract host for SPN
+                let upstream_host = upstream_addr.split(':').next().unwrap_or(upstream_addr);
+                let auth = KerberosAuthenticator::new(upstream_host);
+                match auth.get_auth_header() {
+                    Ok(h) => Some(h),
+                    Err(e) => {
+                        error!("Kerberos auth failed: {}", e);
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
+
+        if let Some(header_val) = auth_header_value {
+            connect_req.push_str(&format!("Proxy-Authorization: {}\r\n", header_val));
         }
     }
 
