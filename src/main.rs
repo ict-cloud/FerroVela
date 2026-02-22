@@ -3,6 +3,7 @@ use log::{error, info};
 use std::sync::Arc;
 
 mod config;
+mod logger;
 mod pac;
 mod proxy;
 mod ui;
@@ -26,7 +27,7 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    env_logger::init();
+    logger::init()?;
     let args = Args::parse();
 
     if args.ui {
