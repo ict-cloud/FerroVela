@@ -35,7 +35,7 @@ impl Default for ProxyConfig {
     }
 }
 
-fn default_port() -> u16 {
+pub fn default_port() -> u16 {
     3128
 }
 

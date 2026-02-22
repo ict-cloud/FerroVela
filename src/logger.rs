@@ -34,7 +34,8 @@ pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .create(true)
         .write(true)
         .append(true)
-        .open("service.log")?;
+        .open("service.log")
+        .expect("Failed to open service.log");
 
     let logger = SimpleLogger {
         file: Mutex::new(file),

@@ -1,5 +1,5 @@
 use crate::config::{
-    load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
+    default_port, load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
 };
 use crate::pac::PacEngine;
 use crate::proxy::Proxy;
@@ -154,7 +154,7 @@ impl ConfigEditor {
     }
 
     fn build_config(&self) -> Config {
-        let port = self.proxy_port.parse().unwrap_or(3128);
+        let port = self.proxy_port.parse().unwrap_or(default_port());
         let pac_file = if self.pac_file.trim().is_empty() {
             None
         } else {
