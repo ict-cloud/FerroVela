@@ -2,7 +2,6 @@ use anyhow::{Context as AnyhowContext, Result};
 use boa_engine::string::JsString;
 use boa_engine::{Context, JsValue, NativeFunction, Source};
 use log::error;
-use reqwest::blocking::Client;
 use std::fs;
 use std::thread;
 use tokio::sync::{mpsc, oneshot};
@@ -21,7 +20,14 @@ struct PacRequest {
 impl PacEngine {
     pub fn new(pac_url_or_path: &str) -> Result<Self> {
         let script = if pac_url_or_path.starts_with("http") {
-            Client::new().get(pac_url_or_path).send()?.text()?
+            // For HTTP URLs, we need to handle async in a blocking context
+            // Using a runtime inside the new() function
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(async {
+                let client = reqwest::Client::new();
+                client.get(pac_url_or_path).send().await?.text().await
+            })
+            .context("Failed to fetch PAC file")?
         } else {
             fs::read_to_string(pac_url_or_path).context("Failed to read PAC file")?
         };
@@ -55,7 +61,7 @@ impl PacEngine {
             let _ = context.register_global_callable(
                 JsString::from("shExpMatch"),
                 2,
-                NativeFunction::from_fn_ptr(|_, args, _| {
+                NativeFunction::from_fn_ptr(|_, args, ctx| {
                     let str = args
                         .get(0)
                         .and_then(|v| v.as_string())
@@ -67,16 +73,19 @@ impl PacEngine {
                         .map(|s| s.to_std_string_escaped())
                         .unwrap_or_default();
 
+                    // Convert glob pattern to regex
                     let regex_pattern = pattern
                         .replace(".", "\\.")
                         .replace("*", ".*")
                         .replace("?", ".");
-                    let re = regex::Regex::new(&regex_pattern).map_err(|e| {
-                        boa_engine::JsError::from_opaque(JsValue::from(JsString::from(
-                            e.to_string(),
-                        )))
-                    })?;
-                    Ok(JsValue::from(re.is_match(&str)))
+
+                    // Try to compile regex
+                    match regex::Regex::new(&regex_pattern) {
+                        Ok(re) => Ok(JsValue::from(re.is_match(&str))),
+                        Err(e) => Err(boa_engine::JsError::from_opaque(JsValue::from(
+                            JsString::from(e.to_string()),
+                        ))),
+                    }
                 }),
             );
 
