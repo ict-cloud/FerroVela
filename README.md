@@ -5,7 +5,7 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 ## Features
 
 - **PAC File Support**: Seamlessly reads and interprets `.pac` files for dynamic proxy configuration.
-- **Protocol Support**: Routes both HTTP and HTTPS traffic efficiently.
+-   **Protocol Support**: Routes both HTTP (GET, POST, etc.) and HTTPS (CONNECT) traffic efficiently.
 - **Smart Exceptions**: configure exceptions based on domains, glob patterns, or IP addresses.
 - **Corporate Authentication**: Supports NTLM and Kerberos authentication for upstream proxies.
 - **Developer Friendly**: 
