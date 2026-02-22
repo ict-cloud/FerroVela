@@ -61,7 +61,7 @@ impl PacEngine {
             let _ = context.register_global_callable(
                 JsString::from("shExpMatch"),
                 2,
-                NativeFunction::from_fn_ptr(|_, args, ctx| {
+                NativeFunction::from_fn_ptr(|_, args, _| {
                     let str = args
                         .get(0)
                         .and_then(|v| v.as_string())
