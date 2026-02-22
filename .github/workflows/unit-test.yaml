@@ -1,4 +1,4 @@
-name: Pikchr Unit Tests
+name: Unit Tests
 
 on:
   push:

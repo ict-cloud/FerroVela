@@ -1,4 +1,4 @@
-name: Pikchr Tests
+name: Tests
 
 on:
   pull_request:
@@ -53,7 +53,7 @@ jobs:
           profile: "minimal"
           toolchain: "stable"
           override: true
-          
+
       - run: "rustup component add rustfmt"
 
       - uses: "actions-rs/cargo@v1"
