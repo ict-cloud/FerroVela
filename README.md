@@ -7,7 +7,7 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 - **PAC File Support**: Seamlessly reads and interprets `.pac` files for dynamic proxy configuration.
 -   **Protocol Support**: Routes both HTTP (GET, POST, etc.) and HTTPS (CONNECT) traffic efficiently.
 - **Smart Exceptions**: configure exceptions based on domains, glob patterns, or IP addresses.
-- **Corporate Authentication**: Supports NTLM and Kerberos authentication for upstream proxies.
+- **Corporate Authentication**: Supports Basic, NTLM, and Kerberos authentication for upstream proxies.
 - **Developer Friendly**: 
     - Easy debugging with detailed logging.
     - Simple configuration via a TOML file.
@@ -23,12 +23,51 @@ To launch the configuration editor:
 ./target/release/ferrovela --ui
 ```
 
-### Kerberos Authentication
+### Authentication Types
+
+FerroVela supports multiple authentication methods for upstream proxies:
+
+#### NTLM
+
+To use NTLM authentication:
+1. Set `auth_type = "ntlm"` in `config.toml`.
+2. Provide `username`, `password`, `domain`, and `workstation`.
+
+```toml
+[upstream]
+auth_type = "ntlm"
+username = "user"
+password = "password"
+domain = "CORP"
+workstation = "MYPC"
+proxy_url = "http://proxy.corp.com:8080"
+```
+
+#### Kerberos
 
 To use Kerberos authentication:
 1. Ensure your machine is joined to the domain or you have a valid Kerberos ticket (obtainable via `kinit`).
 2. Set `auth_type = "kerberos"` in `config.toml`.
-3. FerroVela will automatically use the cached credentials to authenticate with the upstream proxy.
+3. FerroVela will automatically use the cached credentials (TGT) to authenticate with the upstream proxy using SPNEGO.
+
+```toml
+[upstream]
+auth_type = "kerberos"
+proxy_url = "http://proxy.corp.com:8080"
+# username/password/domain are ignored for Kerberos (uses system ticket)
+```
+
+#### Basic
+
+To use Basic authentication:
+
+```toml
+[upstream]
+auth_type = "basic"
+username = "user"
+password = "password"
+proxy_url = "http://proxy.corp.com:8080"
+```
 
 ### Manual Configuration
 
@@ -40,10 +79,12 @@ port = 3128
 pac_file = "http://wpad/wpad.dat" # or local path
 
 [upstream]
-auth_type = "kerberos" # or "basic", "none"
-username = "user" # Required for "basic"
-password = "password" # Required for "basic"
-# For "kerberos", username/password are ignored. The system's active Kerberos ticket is used.
+auth_type = "ntlm" # or "basic", "kerberos", "none"
+username = "user"
+password = "password"
+domain = "CORP" # Required for NTLM
+workstation = "WORKSTATION" # Optional for NTLM
+proxy_url = "http://upstream:8080"
 
 [exceptions]
 # bypass upstream proxy for these
@@ -52,9 +93,12 @@ hosts = ["localhost", "127.0.0.1", "*.local"]
 
 ## Building and Running
 
-1. **Install Rust**: Ensure you have Rust and Cargo installed.
-2. **Build**: `cargo build --release`
-3. **Run**: `./target/release/ferrovela`
+1.  **Install Rust**: Ensure you have Rust and Cargo installed.
+2.  **Install Dependencies**:
+    -   On Ubuntu/Debian: `sudo apt-get install libkrb5-dev libgssapi-krb5-2`
+    -   On MacOS: usually installed by default (via Xcode Command Line Tools).
+3.  **Build**: `cargo build --release`
+4.  **Run**: `./target/release/ferrovela`
 
 ## Dependencies
 
@@ -63,6 +107,7 @@ hosts = ["localhost", "127.0.0.1", "*.local"]
 - `serde`/`toml`: Configuration parsing.
 - `iced`: For the graphical user interface.
 - `libgssapi`: For Kerberos/GSSAPI integration.
+- `ntlmclient`: For NTLMv2 authentication.
 
 ## Running as a Service on MacOS
 
