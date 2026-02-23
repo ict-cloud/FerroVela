@@ -2,7 +2,7 @@ use crate::config::{
     default_port, load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
 };
 use crate::pac::PacEngine;
-use crate::proxy::Proxy;
+use crate::proxy::{Proxy, ProxySignal};
 use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
 use iced::{window, Alignment, Color, Element, Subscription, Task};
 use log::{error, info};
@@ -13,17 +13,10 @@ use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::AbortHandle;
 
-pub enum ExternalCmd {
-    Show,
-}
+// Global receiver for IPC commands
+pub static IPC_RECEIVER: OnceLock<Mutex<Option<mpsc::Receiver<ProxySignal>>>> = OnceLock::new();
 
-// Global receiver for IPC commands to satisfy Subscription::run fn pointer requirement
-pub static IPC_RECEIVER: OnceLock<Mutex<Option<mpsc::Receiver<ExternalCmd>>>> = OnceLock::new();
-
-pub fn run_ui(config_path: String, receiver: mpsc::Receiver<ExternalCmd>) -> iced::Result {
-    // Initialize the global receiver
-    let _ = IPC_RECEIVER.set(Mutex::new(Some(receiver)));
-
+pub fn run_ui(config_path: String) -> iced::Result {
     iced::application(
         move || ConfigEditor::new_args(config_path.clone()),
         ConfigEditor::update,
@@ -108,6 +101,8 @@ pub struct ConfigEditor {
     pub log_content: String,
     // State
     pub window_id: Option<window::Id>,
+    // Signal sender for Proxy
+    pub signal_sender: mpsc::Sender<ProxySignal>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,6 +128,13 @@ pub enum Message {
 impl ConfigEditor {
     pub fn new_args(path: String) -> (Self, Task<Message>) {
         let config = load_config(&path).unwrap_or_default();
+
+        // Initialize IPC channel
+        let (tx, rx) = mpsc::channel(32);
+        // We only set the global receiver once. If it's already set (re-run?), we might lose the new rx?
+        // But application::run usually runs once per process.
+        // If we restart UI? application::run blocks.
+        let _ = IPC_RECEIVER.set(Mutex::new(Some(rx)));
 
         (
             Self {
@@ -180,6 +182,7 @@ impl ConfigEditor {
                 show_logs: false,
                 log_content: String::new(),
                 window_id: None,
+                signal_sender: tx,
             },
             Task::none(),
         )
@@ -316,6 +319,7 @@ impl ConfigEditor {
                 ServiceStatus::Stopped => {
                     let config = Arc::new(self.build_config());
                     let pac_path = config.proxy.pac_file.clone();
+                    let sender = self.signal_sender.clone();
 
                     let handle = tokio::spawn(async move {
                         let pac_engine = if let Some(path) = pac_path {
@@ -331,7 +335,7 @@ impl ConfigEditor {
                             None
                         };
 
-                        let proxy = Proxy::new(config.clone(), pac_engine);
+                        let proxy = Proxy::new(config.clone(), pac_engine, Some(sender));
                         if let Err(e) = proxy.run().await {
                             error!("Proxy error: {}", e);
                         }
@@ -517,7 +521,7 @@ fn ipc_stream() -> impl iced::futures::Stream<Item = Message> {
             if let Some(rx) = guard.as_mut() {
                  if let Some(cmd) = rx.recv().await {
                      match cmd {
-                        ExternalCmd::Show => return Some((Message::External, ())),
+                        ProxySignal::Show => return Some((Message::External, ())),
                      }
                  }
             }

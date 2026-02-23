@@ -1,7 +1,7 @@
 use clap::Parser;
 use log::{error, info};
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 
 mod auth;
 mod config;
@@ -19,7 +19,7 @@ struct Args {
     #[arg(short, long, default_value = "config.toml")]
     config: String,
 
-    /// Launch the configuration UI
+    /// Launch the configuration UI (Deprecated, always launches UI)
     #[arg(long)]
     ui: bool,
 }
@@ -28,54 +28,40 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     logger::init().expect("Failed to initialize logger");
     let args = Args::parse();
 
-    // Single Instance Check / IPC
-    // Try to bind to the control port.
-    let listener = match TcpListener::bind("127.0.0.1:3129") {
-        Ok(l) => l,
-        Err(_) => {
-            // Port is busy, assume another instance is running.
-            // If the user requested UI (or by default per new requirements), signal the existing instance.
-            info!("Instance already running. Sending Show signal...");
-            if let Ok(mut stream) = TcpStream::connect("127.0.0.1:3129") {
-                let _ = stream.write_all(b"S");
-            } else {
-                error!("Failed to connect to existing instance.");
-            }
-            return Ok(());
-        }
+    // Single Instance Check / IPC via Proxy Port (Default 3128)
+    // We try to connect to the default port. If we can talk to our proxy, we signal it to show UI.
+    // If not (connection refused, or not our proxy), we start a new instance.
+
+    // Note: If the user changed the port in config, we should check THAT port.
+    // So we should load config first.
+    let config_port = match config::load_config(&args.config) {
+        Ok(c) => c.proxy.port,
+        Err(_) => 3128, // Default fallback
     };
 
-    // We are the main instance.
-    // Create a channel for IPC messages.
-    let (tx, rx) = tokio::sync::mpsc::channel(32);
+    let addr = format!("127.0.0.1:{}", config_port);
+    info!("Checking for existing instance on {}", addr);
 
-    // Spawn a thread to handle IPC connections.
-    // We use a standard thread because the Iced runtime might not be accessible yet,
-    // and we want this listener to be independent of the UI loop's state (mostly).
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            match stream {
-                Ok(mut stream) => {
-                    let mut buf = [0u8; 1];
-                    // Read the command byte
-                    if stream.read_exact(&mut buf).is_ok() {
-                        if buf[0] == b'S' {
-                            // "Show" command
-                            if let Err(e) = tx.blocking_send(ui::ExternalCmd::Show) {
-                                error!("Failed to send IPC command to UI: {}", e);
-                                break; // Channel closed, UI probably exited.
-                            }
-                        }
-                    }
+    if let Ok(mut stream) = TcpStream::connect(&addr) {
+        // Send Magic Request
+        let request = "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+        if stream.write_all(request.as_bytes()).is_ok() {
+            let mut buffer = [0; 1024];
+            if let Ok(n) = stream.read(&mut buffer) {
+                let response = String::from_utf8_lossy(&buffer[..n]);
+                if response.contains("200 OK") {
+                    info!("Existing instance found and signaled. Exiting.");
+                    return Ok(());
                 }
-                Err(e) => error!("IPC Connection failed: {}", e),
             }
         }
-    });
+        info!("Port {} is open but did not respond correctly. Starting new instance (User might need to change port).", config_port);
+    } else {
+        info!("No instance found on {}. Starting new instance.", config_port);
+    }
 
-    // Run the UI. The UI now handles the Proxy lifecycle internally.
-    // We pass the config path and the IPC receiver.
-    match ui::run_ui(args.config, rx) {
+    // Run the UI
+    match ui::run_ui(args.config) {
         Ok(_) => Ok(()),
         Err(e) => {
             error!("UI Error: {}", e);
