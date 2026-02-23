@@ -3,12 +3,7 @@ use log::{error, info};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-mod auth;
-mod config;
-mod logger;
-mod pac;
-mod proxy;
-mod ui;
+use ferrovela::{config, logger, ui};
 
 #[cfg(test)]
 mod tests;
