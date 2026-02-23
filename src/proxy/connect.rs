@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use base64::prelude::*;
 use bytes::{Bytes, BytesMut};
 use http_body_util::combinators::BoxBody;
 use hyper::upgrade::Upgraded;
@@ -10,6 +9,7 @@ use log::{debug, error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use crate::auth::UpstreamAuthenticator;
 use crate::config::Config;
 use crate::pac::PacEngine;
 use crate::proxy::{empty, resolve_proxy};
@@ -18,12 +18,13 @@ pub async fn handle(
     req: Request<hyper::body::Incoming>,
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     if let Some(addr) = req.uri().authority().map(|a| a.to_string()) {
         tokio::task::spawn(async move {
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
-                    if let Err(e) = tunnel(upgraded, addr, config, pac).await {
+                    if let Err(e) = tunnel(upgraded, addr, config, pac, authenticator).await {
                         error!("Tunnel error: {}", e);
                     };
                 }
@@ -44,6 +45,7 @@ async fn tunnel(
     target: String,
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> std::io::Result<()> {
     let mut upgraded = TokioIo::new(upgraded);
 
@@ -52,7 +54,7 @@ async fn tunnel(
 
     if let Some(proxy_addr) = upstream_proxy {
         debug!("Connecting via upstream: {}", proxy_addr);
-        connect_via_upstream(&mut upgraded, &target, &proxy_addr, &config).await
+        connect_via_upstream(&mut upgraded, &target, &proxy_addr, &config, authenticator).await
     } else {
         debug!("Connecting direct: {}", target);
         connect_direct(&mut upgraded, &target).await
@@ -69,74 +71,141 @@ async fn connect_via_upstream(
     upgraded: &mut TokioIo<Upgraded>,
     target: &str,
     proxy_addr: &str,
-    config: &Arc<Config>,
+    _config: &Arc<Config>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> std::io::Result<()> {
     // Connect to upstream proxy
-    // proxy_addr might be host:port or scheme://host:port
-    // simple heuristic: remove scheme
     let addr = proxy_addr
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
     let mut server = TcpStream::connect(addr).await?;
 
-    // Send CONNECT request to upstream
-    let mut connect_req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
+    let mut auth_session = authenticator.as_ref().map(|a| a.create_session());
+    let mut challenge: Option<String> = None;
+    let mut header_buf = BytesMut::with_capacity(4096);
 
-    // Auth Logic
-    if let Some(upstream_conf) = &config.upstream {
-        match upstream_conf.auth_type.as_str() {
-            "basic" => {
-                if let (Some(u), Some(p)) = (&upstream_conf.username, &upstream_conf.password) {
-                    let creds = format!("{}:{}", u, p);
-                    let encoded = BASE64_STANDARD.encode(creds);
-                    connect_req.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+    // Handshake loop
+    loop {
+        // 1. Send CONNECT Request
+        let mut connect_req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
+        connect_req.push_str("Proxy-Connection: Keep-Alive\r\n");
+
+        if let Some(session) = &mut auth_session {
+            match session.step(challenge.as_deref()) {
+                Ok(Some(h)) => {
+                    connect_req.push_str(&format!("Proxy-Authorization: {}\r\n", h));
+                }
+                Ok(None) => {
+                    // Session established or no header needed
+                }
+                Err(e) => {
+                    error!("Auth session step error: {}", e);
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Auth error"));
                 }
             }
-            _ => {}
         }
-    }
 
-    connect_req.push_str("\r\n"); // End of headers
-    server.write_all(connect_req.as_bytes()).await?;
+        connect_req.push_str("\r\n");
+        server.write_all(connect_req.as_bytes()).await?;
 
-    // Read response headers efficiently using BytesMut
-    let mut header_buf = BytesMut::with_capacity(4096);
-    loop {
-        let n = server.read_buf(&mut header_buf).await?;
-        if n == 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "Upstream closed connection",
-            ));
-        }
-        if let Some(pos) = find_subsequence(&header_buf, b"\r\n\r\n") {
-            let body_start = pos + 4;
-            let headers_str = String::from_utf8_lossy(&header_buf[..pos]);
-            if !headers_str.contains(" 200 ") {
-                error!(
-                    "Upstream proxy returned error: {}",
-                    headers_str.lines().next().unwrap_or("")
-                );
+        // Reset state for response reading
+        header_buf.clear();
+
+        // 2. Read Response Loop
+        loop {
+            let n = server.read_buf(&mut header_buf).await?;
+            if n == 0 {
                 return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Upstream refused connection",
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Upstream closed connection",
                 ));
             }
 
-            if body_start < header_buf.len() {
-                upgraded.write_all(&header_buf[body_start..]).await?;
+            if let Some(pos) = find_subsequence(&header_buf, b"\r\n\r\n") {
+                let headers_bytes = &header_buf[..pos];
+                let headers_str = String::from_utf8_lossy(headers_bytes).to_string();
+                let body_start = pos + 4;
+
+                if headers_str.contains(" 200 ") {
+                    // Success!
+                    // If we read more than headers (body start), write it to client
+                    if body_start < header_buf.len() {
+                        upgraded.write_all(&header_buf[body_start..]).await?;
+                    }
+                    // Start tunnel
+                    tokio::io::copy_bidirectional(upgraded, &mut server).await?;
+                    return Ok(());
+                } else if headers_str.contains(" 407 ") {
+                    // Auth Challenge
+                    if auth_session.is_none() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::PermissionDenied,
+                            "Upstream requires authentication",
+                        ));
+                    }
+
+                    // Parse Content-Length to drain body
+                    let cl = parse_content_length(&headers_str);
+                    let total_len = body_start + cl;
+
+                    // Ensure we read the full body
+                    while header_buf.len() < total_len {
+                         let n = server.read_buf(&mut header_buf).await?;
+                         if n == 0 {
+                            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Upstream closed connection during body read"));
+                        }
+                    }
+
+                    // Extract challenge
+                    if let Some(val) = find_header_value(&headers_str, "Proxy-Authenticate") {
+                        debug!("Received Proxy-Authenticate: {}", val);
+                        challenge = Some(val);
+                        // Break inner reading loop to send next request
+                        break;
+                    } else {
+                        return Err(std::io::Error::new(std::io::ErrorKind::Other, "407 without Proxy-Authenticate"));
+                    }
+                } else {
+                    error!("Upstream proxy returned error: {}", headers_str.lines().next().unwrap_or(""));
+                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Upstream refused connection"));
+                }
             }
-            break;
+
+            if header_buf.len() > 16384 {
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Header too large"));
+            }
         }
     }
-
-    let _ = tokio::io::copy_bidirectional(upgraded, &mut server).await?;
-    Ok(())
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+fn parse_content_length(headers: &str) -> usize {
+    for line in headers.lines() {
+        if line.to_lowercase().starts_with("content-length:") {
+             if let Some(val) = line.split(':').nth(1) {
+                 return val.trim().parse().unwrap_or(0);
+             }
+        }
+    }
+    0
+}
+
+fn find_header_value(headers: &str, key: &str) -> Option<String> {
+    let key_lower = key.to_lowercase();
+    for line in headers.lines() {
+        let line_lower = line.to_lowercase();
+        if line_lower.starts_with(&format!("{}:", key_lower)) {
+             // We need original case value, so we find split index in original line
+             if let Some(idx) = line.find(':') {
+                 return Some(line[idx+1..].trim().to_string());
+             }
+        }
+    }
+    None
 }

@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use http_body_util::{BodyExt, Empty, Full};
 use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Empty, Full};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response};
@@ -11,6 +11,7 @@ use hyper_util::rt::TokioIo;
 use log::{debug, error, info};
 use tokio::net::TcpListener;
 
+use crate::auth::{create_authenticator, UpstreamAuthenticator};
 use crate::config::Config;
 use crate::pac::PacEngine;
 
@@ -20,13 +21,21 @@ pub mod nonconnect;
 pub struct Proxy {
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 }
 
 impl Proxy {
     pub fn new(config: Arc<Config>, pac: Option<PacEngine>) -> Self {
+        let authenticator = if let Some(upstream_conf) = &config.upstream {
+            create_authenticator(upstream_conf).map(Arc::new)
+        } else {
+            None
+        };
+
         Proxy {
             config,
             pac: Arc::new(pac),
+            authenticator,
         }
     }
 
@@ -46,6 +55,7 @@ impl Proxy {
             let io = TokioIo::new(stream);
             let config = self.config.clone();
             let pac = self.pac.clone();
+            let authenticator = self.authenticator.clone();
 
             tokio::task::spawn(async move {
                 if let Err(err) = http1::Builder::new()
@@ -56,7 +66,8 @@ impl Proxy {
                         service_fn(move |req| {
                             let config = config.clone();
                             let pac = pac.clone();
-                            async move { proxy(req, config, pac).await }
+                            let authenticator = authenticator.clone();
+                            async move { proxy(req, config, pac, authenticator).await }
                         }),
                     )
                     .with_upgrades()
@@ -73,11 +84,12 @@ async fn proxy(
     req: Request<hyper::body::Incoming>,
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     if Method::CONNECT == req.method() {
-        connect::handle(req, config, pac).await
+        connect::handle(req, config, pac, authenticator).await
     } else {
-        nonconnect::handle(req, config, pac).await
+        nonconnect::handle(req, config, pac, authenticator).await
     }
 }
 
@@ -131,5 +143,7 @@ pub fn empty() -> BoxBody<Bytes, hyper::Error> {
 }
 
 pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-    Full::new(chunk.into()).map_err(|never| match never {}).boxed()
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
 }

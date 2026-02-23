@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::UpstreamAuthenticator;
+use super::{UpstreamAuthenticator, AuthSession};
 
 pub struct MockKerberosAuthenticator;
 
@@ -11,7 +11,15 @@ impl MockKerberosAuthenticator {
 }
 
 impl UpstreamAuthenticator for MockKerberosAuthenticator {
-    fn get_auth_header(&self) -> Result<String> {
-        Ok("Negotiate MockKerberosToken".to_string())
+    fn create_session(&self) -> Box<dyn AuthSession> {
+        Box::new(MockKerberosSession)
+    }
+}
+
+pub struct MockKerberosSession;
+
+impl AuthSession for MockKerberosSession {
+    fn step(&mut self, _challenge: Option<&str>) -> Result<Option<String>> {
+        Ok(Some("Negotiate MockKerberosToken".to_string()))
     }
 }
