@@ -5,3 +5,5 @@ mod http_proxy_tests;
 mod main_tests;
 #[cfg(test)]
 mod ui_tests;
+#[cfg(test)]
+mod performance_tests;
