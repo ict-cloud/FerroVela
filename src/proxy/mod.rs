@@ -17,6 +17,7 @@ use crate::config::Config;
 use crate::pac::PacEngine;
 
 pub mod connect;
+pub mod http_utils;
 pub mod nonconnect;
 
 #[derive(Debug, Clone)]
