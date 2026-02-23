@@ -82,6 +82,8 @@ pub struct ConfigEditor {
     pub upstream_auth_type: AuthType,
     pub upstream_username: String,
     pub upstream_password: String,
+    pub upstream_domain: String,
+    pub upstream_workstation: String,
     pub upstream_proxy_url: String,
     pub exceptions_hosts: String,
     // Status message
@@ -101,6 +103,8 @@ pub enum Message {
     UpstreamAuthTypeChanged(AuthType),
     UpstreamUsernameChanged(String),
     UpstreamPasswordChanged(String),
+    UpstreamDomainChanged(String),
+    UpstreamWorkstationChanged(String),
     UpstreamProxyUrlChanged(String),
     ExceptionsHostsChanged(String),
     SavePressed,
@@ -132,6 +136,16 @@ impl ConfigEditor {
                     .upstream
                     .as_ref()
                     .and_then(|u| u.password.clone())
+                    .unwrap_or_default(),
+                upstream_domain: config
+                    .upstream
+                    .as_ref()
+                    .and_then(|u| u.domain.clone())
+                    .unwrap_or_default(),
+                upstream_workstation: config
+                    .upstream
+                    .as_ref()
+                    .and_then(|u| u.workstation.clone())
                     .unwrap_or_default(),
                 upstream_proxy_url: config
                     .upstream
@@ -178,6 +192,16 @@ impl ConfigEditor {
                     None
                 } else {
                     Some(self.upstream_password.trim().to_string())
+                },
+                domain: if self.upstream_domain.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.upstream_domain.trim().to_string())
+                },
+                workstation: if self.upstream_workstation.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.upstream_workstation.trim().to_string())
                 },
                 proxy_url: if self.upstream_proxy_url.trim().is_empty() {
                     None
@@ -249,6 +273,14 @@ impl ConfigEditor {
             }
             Message::UpstreamPasswordChanged(value) => {
                 self.upstream_password = value;
+                self.save_current_config();
+            }
+            Message::UpstreamDomainChanged(value) => {
+                self.upstream_domain = value;
+                self.save_current_config();
+            }
+            Message::UpstreamWorkstationChanged(value) => {
+                self.upstream_workstation = value;
                 self.save_current_config();
             }
             Message::UpstreamProxyUrlChanged(value) => {
@@ -391,6 +423,18 @@ impl ConfigEditor {
                 text_input("Password", &self.upstream_password)
                     .on_input(Message::UpstreamPasswordChanged)
                     .secure(true)
+            ]
+            .spacing(10),
+            row![
+                text("Domain (NTLM):"),
+                text_input("Domain", &self.upstream_domain)
+                    .on_input(Message::UpstreamDomainChanged)
+            ]
+            .spacing(10),
+            row![
+                text("Workstation (NTLM):"),
+                text_input("Workstation", &self.upstream_workstation)
+                    .on_input(Message::UpstreamWorkstationChanged)
             ]
             .spacing(10),
             row![

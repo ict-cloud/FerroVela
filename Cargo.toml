@@ -26,6 +26,7 @@ base64 = "0.22"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 iced = { version = "0.14", features = ["tokio"] }
 libgssapi = { version = "0.7", default-features = false }
+ntlmclient = "0.2.0"
 
 [dev-dependencies]
 tempfile = "3.25.0"

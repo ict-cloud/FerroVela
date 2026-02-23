@@ -94,7 +94,7 @@ async fn handle_direct(
 }
 
 async fn handle_upstream(
-    mut req: Request<hyper::body::Incoming>,
+    req: Request<hyper::body::Incoming>,
     proxy_addr: String,
     _config: Arc<Config>,
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
@@ -103,6 +103,24 @@ async fn handle_upstream(
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
+    // 1. Buffer Request Body
+    let (parts, body) = req.into_parts();
+    let body_bytes = match body.collect().await {
+        Ok(c) => c.to_bytes(),
+        Err(e) => {
+            error!("Failed to read request body: {}", e);
+            let mut resp = Response::new(full("Internal Server Error: Body Read Failed"));
+            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(resp);
+        }
+    };
+
+    let method = parts.method.clone();
+    let uri = parts.uri.clone();
+    let version = parts.version;
+    let headers = parts.headers.clone();
+
+    // 2. Connect
     let stream = match TcpStream::connect(addr).await {
         Ok(s) => s,
         Err(e) => {
@@ -122,21 +140,95 @@ async fn handle_upstream(
         }
     });
 
-    // Add Auth Headers
-    if let Some(auth) = authenticator {
-        match auth.get_auth_header() {
-            Ok(val) => {
-                if let Ok(header_val) = HeaderValue::from_str(&val) {
-                    req.headers_mut()
-                        .insert(hyper::header::PROXY_AUTHORIZATION, header_val);
-                }
-            }
-            Err(e) => {
-                error!("Failed to generate auth header: {}", e);
+    let mut auth_session = authenticator.as_ref().map(|a| a.create_session());
+    let mut challenge: Option<String> = None;
+    let mut retry_count = 0;
+
+    // Loop
+    loop {
+        retry_count += 1;
+        if retry_count > 10 {
+            error!("Too many authentication retries");
+            let mut resp = Response::new(full("Upstream Authentication Loop"));
+            *resp.status_mut() = StatusCode::BAD_GATEWAY;
+            return Ok(resp);
+        }
+
+        // Reconstruct Request
+        let mut builder = Request::builder()
+            .method(method.clone())
+            .uri(uri.clone())
+            .version(version);
+
+        for (k, v) in headers.iter() {
+            if k != "proxy-authorization" {
+                builder = builder.header(k, v);
             }
         }
-    }
 
-    let resp = sender.send_request(req).await?;
-    Ok(resp.map(|b| b.map_err(|e| e).boxed()))
+        // Add Proxy-Authorization
+        if let Some(session) = &mut auth_session {
+             match session.step(challenge.as_deref()) {
+                 Ok(Some(h)) => {
+                     if let Ok(val) = HeaderValue::from_str(&h) {
+                         builder = builder.header(hyper::header::PROXY_AUTHORIZATION, val);
+                     }
+                 }
+                 Ok(None) => {},
+                 Err(e) => {
+                     error!("Auth error: {}", e);
+                     let mut resp = Response::new(full("Internal Server Error: Auth Failed"));
+                     *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                     return Ok(resp);
+                 }
+             }
+        }
+
+        let req = builder.body(full(body_bytes.clone())).unwrap();
+
+        // Send Request
+        let resp = match sender.send_request(req).await {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to send request to upstream: {}", e);
+                // Can retry if connection closed? But for NTLM we must restart handshake.
+                // Assuming fatal error.
+                let mut resp = Response::new(full(format!("Upstream Error: {}", e)));
+                *resp.status_mut() = StatusCode::BAD_GATEWAY;
+                return Ok(resp);
+            }
+        };
+
+        if resp.status() == StatusCode::PROXY_AUTHENTICATION_REQUIRED { // 407
+             if auth_session.is_none() {
+                 return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+             }
+
+             // Extract Challenge
+             if let Some(val) = resp.headers().get("proxy-authenticate") {
+                 if let Ok(s) = val.to_str() {
+                     challenge = Some(s.to_string());
+                 } else {
+                     challenge = None;
+                 }
+             } else {
+                 challenge = None;
+             }
+
+             // Check if we should pass through 407 (e.g. auth failed after attempts)
+             // If we got 407 and challenge is None, it's weird, but maybe pass through.
+             if challenge.is_none() {
+                  return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+             }
+
+             // Drain body so we can reuse connection
+             let _ = resp.collect().await; // Ignore errors during drain
+
+             // Continue loop
+             continue;
+        } else {
+            // Success or other error
+            return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+        }
+    }
 }

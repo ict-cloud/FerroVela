@@ -4,12 +4,21 @@ use anyhow::Result;
 pub mod basic;
 pub mod kerberos;
 pub mod mock_kerberos;
+pub mod ntlm;
 
-/// Trait for upstream authentication strategies.
+/// Trait for upstream authentication factory.
 pub trait UpstreamAuthenticator: Send + Sync {
-    /// Generates the value for the `Proxy-Authorization` header.
-    /// Returns the full header value, e.g., "Basic <token>" or "Negotiate <token>".
-    fn get_auth_header(&self) -> Result<String>;
+    /// Creates a new authentication session.
+    fn create_session(&self) -> Box<dyn AuthSession>;
+}
+
+/// Trait for an authentication session.
+/// Handles the handshake process.
+pub trait AuthSession: Send + Sync {
+    /// Processes a challenge from the server (e.g., from `Proxy-Authenticate` header).
+    /// If `challenge` is `None`, it's the initial step.
+    /// Returns the value for the `Proxy-Authorization` header, or `None` if no header is needed (e.g. handshake complete).
+    fn step(&mut self, challenge: Option<&str>) -> Result<Option<String>>;
 }
 
 pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamAuthenticator>> {
@@ -38,6 +47,18 @@ pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamA
             }
         }
         "mock_kerberos" => Some(Box::new(mock_kerberos::MockKerberosAuthenticator::new())),
+        "ntlm" => {
+            if let (Some(u), Some(p)) = (&config.username, &config.password) {
+                Some(Box::new(ntlm::NtlmAuthenticator::new(
+                    u.clone(),
+                    p.clone(),
+                    config.domain.clone().unwrap_or_default(),
+                    config.workstation.clone().unwrap_or_default(),
+                )))
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }

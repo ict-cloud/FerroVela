@@ -5,7 +5,7 @@ use libgssapi::name::Name;
 use libgssapi::oid::{GSS_MECH_KRB5, GSS_NT_HOSTBASED_SERVICE};
 use log::debug;
 
-use super::UpstreamAuthenticator;
+use super::{AuthSession, UpstreamAuthenticator};
 
 pub struct KerberosAuthenticator {
     service_name: String,
@@ -21,26 +21,62 @@ impl KerberosAuthenticator {
 }
 
 impl UpstreamAuthenticator for KerberosAuthenticator {
-    fn get_auth_header(&self) -> Result<String> {
-        debug!("Initializing GSSAPI context for: {}", self.service_name);
+    fn create_session(&self) -> Box<dyn AuthSession> {
+        Box::new(KerberosSession {
+            service_name: self.service_name.clone(),
+            ctx: None,
+        })
+    }
+}
 
-        let name = Name::new(self.service_name.as_bytes(), Some(&GSS_NT_HOSTBASED_SERVICE))
-            .context("Failed to create GSS Name")?;
+pub struct KerberosSession {
+    service_name: String,
+    ctx: Option<ClientCtx>,
+}
 
-        let mut ctx = ClientCtx::new(
-            None,
-            name,
-            CtxFlags::GSS_C_MUTUAL_FLAG | CtxFlags::GSS_C_REPLAY_FLAG,
-            Some(&GSS_MECH_KRB5),
-        );
-
-        let token = match ctx.step(None, None) {
-            Ok(Some(token)) => token,
-            Ok(None) => return Err(anyhow::anyhow!("GSSAPI context established without token")),
-            Err(e) => return Err(anyhow::anyhow!("GSSAPI step failed: {}", e)),
+impl AuthSession for KerberosSession {
+    fn step(&mut self, challenge: Option<&str>) -> Result<Option<String>> {
+        let input_token = if let Some(c) = challenge {
+            if c.trim().is_empty() {
+                 None
+            } else if c.starts_with("Negotiate ") {
+                Some(BASE64_STANDARD.decode(c[10..].trim())?)
+            } else {
+                 if c.trim() == "Negotiate" {
+                    None
+                } else {
+                     return Err(anyhow::anyhow!("Invalid challenge format: {}", c));
+                }
+            }
+        } else {
+            None
         };
 
-        let encoded = BASE64_STANDARD.encode(&*token);
-        Ok(format!("Negotiate {}", encoded))
+        if self.ctx.is_none() {
+            debug!("Initializing GSSAPI context for: {}", self.service_name);
+            let name = Name::new(
+                self.service_name.as_bytes(),
+                Some(&GSS_NT_HOSTBASED_SERVICE),
+            )
+            .context("Failed to create GSS Name")?;
+
+            let ctx = ClientCtx::new(
+                None,
+                name,
+                CtxFlags::GSS_C_MUTUAL_FLAG | CtxFlags::GSS_C_REPLAY_FLAG,
+                Some(&GSS_MECH_KRB5),
+            );
+            self.ctx = Some(ctx);
+        }
+
+        let ctx = self.ctx.as_mut().unwrap();
+        match ctx.step(input_token.as_deref(), None) {
+            Ok(Some(token)) => {
+                 let encoded = BASE64_STANDARD.encode(&*token);
+                 Ok(Some(format!("Negotiate {}", encoded)))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(anyhow::anyhow!("GSSAPI step failed: {}", e)),
+        }
     }
 }

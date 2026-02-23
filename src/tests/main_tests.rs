@@ -233,6 +233,8 @@ async fn test_proxy_upstream() {
         auth_type: "none".to_string(),
         username: None,
         password: None,
+        domain: None,
+        workstation: None,
         proxy_url: Some(format!("127.0.0.1:{}", upstream_port)),
     };
 
@@ -280,6 +282,8 @@ async fn test_proxy_exceptions() {
         auth_type: "none".to_string(),
         username: None,
         password: None,
+        domain: None,
+        workstation: None,
         proxy_url: Some(format!("127.0.0.1:{}", upstream_port)),
     };
 

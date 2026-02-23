@@ -1,7 +1,7 @@
 use anyhow::Result;
 use base64::prelude::*;
 
-use super::UpstreamAuthenticator;
+use super::{UpstreamAuthenticator, AuthSession};
 
 pub struct BasicAuthenticator {
     username: String,
@@ -15,9 +15,23 @@ impl BasicAuthenticator {
 }
 
 impl UpstreamAuthenticator for BasicAuthenticator {
-    fn get_auth_header(&self) -> Result<String> {
+    fn create_session(&self) -> Box<dyn AuthSession> {
+        Box::new(BasicSession {
+            username: self.username.clone(),
+            password: self.password.clone(),
+        })
+    }
+}
+
+pub struct BasicSession {
+    username: String,
+    password: String,
+}
+
+impl AuthSession for BasicSession {
+    fn step(&mut self, _challenge: Option<&str>) -> Result<Option<String>> {
         let creds = format!("{}:{}", self.username, self.password);
         let encoded = BASE64_STANDARD.encode(creds);
-        Ok(format!("Basic {}", encoded))
+        Ok(Some(format!("Basic {}", encoded)))
     }
 }
