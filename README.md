@@ -100,6 +100,31 @@ hosts = ["localhost", "127.0.0.1", "*.local"]
 3.  **Build**: `cargo build --release`
 4.  **Run**: `./target/release/ferrovela`
 
+## Performance Testing
+
+FerroVela includes a performance test suite to measure throughput and latency of the proxy logic.
+
+To run the performance tests:
+```bash
+cargo test performance_tests -- --nocapture
+```
+
+The output will display metrics such as:
+- Total Requests
+- Successful Requests
+- Total Duration
+- Requests Per Second (RPS)
+
+Example output:
+```
+Starting performance test with 50 clients, 100 requests each (Total: 5000)
+Performance Test Results:
+Total Requests: 5000
+Successful Requests: 5000
+Total Duration: 800.16ms
+Requests Per Second (RPS): 6248.71
+```
+
 ## Dependencies
 
 - `hyper`: For low-level HTTP handling.
