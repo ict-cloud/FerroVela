@@ -124,10 +124,9 @@ async fn connect_via_upstream(
 
             if let Some(pos) = find_subsequence(&header_buf, b"\r\n\r\n") {
                 let headers_bytes = &header_buf[..pos];
-                let headers_str = String::from_utf8_lossy(headers_bytes).to_string();
                 let body_start = pos + 4;
 
-                if headers_str.contains(" 200 ") {
+                if find_subsequence(headers_bytes, b" 200 ").is_some() {
                     // Success!
                     // If we read more than headers (body start), write it to client
                     if body_start < header_buf.len() {
@@ -136,8 +135,10 @@ async fn connect_via_upstream(
                     // Start tunnel
                     tokio::io::copy_bidirectional(upgraded, &mut server).await?;
                     return Ok(());
-                } else if headers_str.contains(" 407 ") {
-                    // Auth Challenge
+                } else {
+                    let headers_str = String::from_utf8_lossy(headers_bytes).to_string();
+                    if headers_str.contains(" 407 ") {
+                        // Auth Challenge
                     if auth_session.is_none() {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::PermissionDenied,
@@ -169,6 +170,7 @@ async fn connect_via_upstream(
                 } else {
                     error!("Upstream proxy returned error: {}", headers_str.lines().next().unwrap_or(""));
                     return Err(std::io::Error::new(std::io::ErrorKind::Other, "Upstream refused connection"));
+                }
                 }
             }
 
