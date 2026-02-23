@@ -6,10 +6,11 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
-use hyper::{Method, Request, Response};
+use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use log::{debug, error, info};
 use tokio::net::TcpListener;
+use tokio::sync::mpsc::Sender;
 
 use crate::auth::{create_authenticator, UpstreamAuthenticator};
 use crate::config::Config;
@@ -18,14 +19,20 @@ use crate::pac::PacEngine;
 pub mod connect;
 pub mod nonconnect;
 
+#[derive(Debug, Clone)]
+pub enum ProxySignal {
+    Show,
+}
+
 pub struct Proxy {
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
+    signal_sender: Option<Sender<ProxySignal>>,
 }
 
 impl Proxy {
-    pub fn new(config: Arc<Config>, pac: Option<PacEngine>) -> Self {
+    pub fn new(config: Arc<Config>, pac: Option<PacEngine>, signal_sender: Option<Sender<ProxySignal>>) -> Self {
         let authenticator = if let Some(upstream_conf) = &config.upstream {
             create_authenticator(upstream_conf).map(Arc::new)
         } else {
@@ -36,6 +43,7 @@ impl Proxy {
             config,
             pac: Arc::new(pac),
             authenticator,
+            signal_sender,
         }
     }
 
@@ -56,6 +64,7 @@ impl Proxy {
             let config = self.config.clone();
             let pac = self.pac.clone();
             let authenticator = self.authenticator.clone();
+            let signal_sender = self.signal_sender.clone();
 
             tokio::task::spawn(async move {
                 if let Err(err) = http1::Builder::new()
@@ -67,7 +76,19 @@ impl Proxy {
                             let config = config.clone();
                             let pac = pac.clone();
                             let authenticator = authenticator.clone();
-                            async move { proxy(req, config, pac, authenticator).await }
+                            let signal_sender = signal_sender.clone();
+                            async move {
+                                if req.uri().path() == "/__ferrovela/show" {
+                                    if let Some(sender) = signal_sender {
+                                        let _ = sender.send(ProxySignal::Show).await;
+                                    }
+                                    return Ok(Response::builder()
+                                        .status(StatusCode::OK)
+                                        .body(full("OK"))
+                                        .unwrap());
+                                }
+                                proxy(req, config, pac, authenticator).await
+                            }
                         }),
                     )
                     .with_upgrades()

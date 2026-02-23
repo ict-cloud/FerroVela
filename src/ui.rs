@@ -2,24 +2,29 @@ use crate::config::{
     default_port, load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
 };
 use crate::pac::PacEngine;
-use crate::proxy::Proxy;
+use crate::proxy::{Proxy, ProxySignal};
 use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
-use iced::{Alignment, Color, Element, Subscription, Task};
+use iced::{window, Alignment, Color, Element, Subscription, Task};
 use log::{error, info};
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
+use tokio::sync::{mpsc, Mutex};
 use tokio::task::AbortHandle;
+
+// Global receiver for IPC commands
+pub static IPC_RECEIVER: OnceLock<Mutex<Option<mpsc::Receiver<ProxySignal>>>> = OnceLock::new();
 
 pub fn run_ui(config_path: String) -> iced::Result {
     iced::application(
-        move || ConfigEditor::new(config_path.clone()),
+        move || ConfigEditor::new_args(config_path.clone()),
         ConfigEditor::update,
         ConfigEditor::view,
     )
     .title("Ferrovela Configuration")
     .subscription(ConfigEditor::subscription)
+    .exit_on_close_request(false)
     .run()
 }
 
@@ -94,6 +99,10 @@ pub struct ConfigEditor {
     // Log view
     pub show_logs: bool,
     pub log_content: String,
+    // State
+    pub window_id: Option<window::Id>,
+    // Signal sender for Proxy
+    pub signal_sender: mpsc::Sender<ProxySignal>,
 }
 
 #[derive(Debug, Clone)]
@@ -111,11 +120,21 @@ pub enum Message {
     ToggleService,
     ToggleLogs,
     Tick,
+    External,
+    WindowCloseRequested(window::Id),
+    IdCaptured(window::Id),
 }
 
 impl ConfigEditor {
-    pub fn new(path: String) -> (Self, Task<Message>) {
+    pub fn new_args(path: String) -> (Self, Task<Message>) {
         let config = load_config(&path).unwrap_or_default();
+
+        // Initialize IPC channel
+        let (tx, rx) = mpsc::channel(32);
+        // We only set the global receiver once. If it's already set (re-run?), we might lose the new rx?
+        // But application::run usually runs once per process.
+        // If we restart UI? application::run blocks.
+        let _ = IPC_RECEIVER.set(Mutex::new(Some(rx)));
 
         (
             Self {
@@ -162,6 +181,8 @@ impl ConfigEditor {
                 proxy_handle: None,
                 show_logs: false,
                 log_content: String::new(),
+                window_id: None,
+                signal_sender: tx,
             },
             Task::none(),
         )
@@ -298,6 +319,7 @@ impl ConfigEditor {
                 ServiceStatus::Stopped => {
                     let config = Arc::new(self.build_config());
                     let pac_path = config.proxy.pac_file.clone();
+                    let sender = self.signal_sender.clone();
 
                     let handle = tokio::spawn(async move {
                         let pac_engine = if let Some(path) = pac_path {
@@ -313,7 +335,7 @@ impl ConfigEditor {
                             None
                         };
 
-                        let proxy = Proxy::new(config.clone(), pac_engine);
+                        let proxy = Proxy::new(config.clone(), pac_engine, Some(sender));
                         if let Err(e) = proxy.run().await {
                             error!("Proxy error: {}", e);
                         }
@@ -342,16 +364,46 @@ impl ConfigEditor {
                     self.load_logs();
                 }
             }
+            Message::External => {
+                if let Some(id) = self.window_id {
+                    // Minimize(false) usually restores it
+                    return window::minimize(id, false)
+                        .chain(window::gain_focus(id));
+                }
+            }
+            Message::WindowCloseRequested(id) => {
+                if self.service_status == ServiceStatus::Running {
+                    return window::minimize(id, true);
+                } else {
+                    return window::close(id);
+                }
+            }
+            Message::IdCaptured(id) => {
+                self.window_id = Some(id);
+            }
         }
         Task::none()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        if self.show_logs {
+        let tick = if self.show_logs {
             iced::time::every(Duration::from_millis(500)).map(|_| Message::Tick)
         } else {
             Subscription::none()
-        }
+        };
+
+        // IPC Subscription
+        let ipc = Subscription::run(ipc_stream);
+
+        let events = iced::event::listen_with(|event, _status, id| {
+             match event {
+                 iced::Event::Window(window::Event::CloseRequested) => Some(Message::WindowCloseRequested(id)),
+                 iced::Event::Window(_) => Some(Message::IdCaptured(id)),
+                 _ => None
+             }
+        });
+
+        Subscription::batch(vec![tick, ipc, events])
     }
 
     pub fn view(&self) -> Element<'_, Message> {
@@ -458,4 +510,24 @@ impl ConfigEditor {
 
         content.into()
     }
+}
+
+// Helper for Subscription::run
+fn ipc_stream() -> impl iced::futures::Stream<Item = Message> {
+    iced::futures::stream::unfold((), move |_| async move {
+        if let Some(guard_lock) = IPC_RECEIVER.get() {
+            // Lock the mutex. This is async mutex.
+            let mut guard = guard_lock.lock().await;
+            if let Some(rx) = guard.as_mut() {
+                 if let Some(cmd) = rx.recv().await {
+                     match cmd {
+                        ProxySignal::Show => return Some((Message::External, ())),
+                     }
+                 }
+            }
+        }
+        // If receiver missing or closed, wait forever
+        std::future::pending::<()>().await;
+        None
+    })
 }

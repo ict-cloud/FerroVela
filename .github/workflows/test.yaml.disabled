@@ -12,8 +12,11 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
-
+        uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
       - uses: "actions-rs/toolchain@v1"
         with:
           profile: "minimal"
@@ -29,8 +32,11 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
-
+        uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
       - uses: "actions-rs/toolchain@v1"
         with:
           profile: "minimal"
@@ -46,7 +52,11 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
 
       - uses: "actions-rs/toolchain@v1"
         with:
@@ -66,7 +76,11 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - name: "Check out the repo"
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
 
       - uses: "actions-rs/toolchain@v1"
         with:
