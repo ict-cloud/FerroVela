@@ -9,7 +9,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap().to_string();
 
-        let (editor, _) = ConfigEditor::new(path.clone());
+        let (editor, _) = ConfigEditor::new_args(path.clone());
 
         // Assert initial state (defaults)
         assert_eq!(editor.proxy_port, "3128"); // Default port
@@ -21,7 +21,7 @@ mod tests {
     fn test_ui_updates() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap().to_string();
-        let (mut editor, _) = ConfigEditor::new(path.clone());
+        let (mut editor, _) = ConfigEditor::new_args(path.clone());
 
         // Test Port Change
         let _ = editor.update(Message::ProxyPortChanged("9090".to_string()));
@@ -36,7 +36,7 @@ mod tests {
     fn test_save_config() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_str().unwrap().to_string();
-        let (mut editor, _) = ConfigEditor::new(path.clone());
+        let (mut editor, _) = ConfigEditor::new_args(path.clone());
 
         // Update some values
         let _ = editor.update(Message::ProxyPortChanged("1234".to_string()));

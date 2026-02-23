@@ -166,7 +166,7 @@ async fn start_proxy(
         exceptions,
     };
 
-    let proxy = Proxy::new(Arc::new(config), None);
+    let proxy = Proxy::new(Arc::new(config), None, None);
     tokio::spawn(async move {
         let _ = proxy.run_with_listener(listener).await;
     });
