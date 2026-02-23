@@ -187,10 +187,8 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 fn parse_content_length(headers: &str) -> usize {
     for line in headers.lines() {
-        if line.to_lowercase().starts_with("content-length:") {
-             if let Some(val) = line.split(':').nth(1) {
-                 return val.trim().parse().unwrap_or(0);
-             }
+        if line.len() >= 15 && line.as_bytes()[..15].eq_ignore_ascii_case(b"content-length:") {
+            return line[15..].trim().parse().unwrap_or(0);
         }
     }
     0
@@ -208,4 +206,34 @@ fn find_header_value(headers: &str, key: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_content_length() {
+        let headers = "HTTP/1.1 200 OK\r\nDate: Mon, 27 Jul 2009 12:28:53 GMT\r\nContent-Type: text/plain\r\nContent-Length: 12345\r\n\r\n";
+        assert_eq!(parse_content_length(headers), 12345);
+    }
+
+    #[test]
+    fn test_parse_content_length_case_insensitive() {
+        let headers = "HTTP/1.1 200 OK\r\ncontent-length: 12345\r\n\r\n";
+        assert_eq!(parse_content_length(headers), 12345);
+
+        let headers_mixed = "HTTP/1.1 200 OK\r\nConTent-LenGth: 12345\r\n\r\n";
+        assert_eq!(parse_content_length(headers_mixed), 12345);
+    }
+
+    #[test]
+    fn test_parse_content_length_non_ascii() {
+        let headers = "HTTP/1.1 200 OK\r\nDate: Mon, 27 Jul 2009 12:28:53 GMT\r\nContent-Type: text/plain\r\nX-Custom-Header: ööööööööö\r\n\r\n";
+        assert_eq!(parse_content_length(headers), 0);
+
+        let headers_bad = "HTTP/1.1 200 OK\r\nDate: Mon, 27 Jul 2009 12:28:53 GMT\r\nContent-Type: text/plain\r\nöööööööööö: 12345\r\n\r\n";
+        // This should not panic
+        assert_eq!(parse_content_length(headers_bad), 0);
+    }
 }
