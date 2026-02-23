@@ -2,11 +2,13 @@ use crate::config::{Config, ProxyConfig, UpstreamConfig};
 use crate::proxy::Proxy;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 
 async fn start_performance_target_server() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind target");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind target");
     let port = listener.local_addr().unwrap().port();
 
     tokio::spawn(async move {
@@ -17,7 +19,9 @@ async fn start_performance_target_server() -> u16 {
                     let mut offset = 0;
                     loop {
                         if let Ok(n) = socket.read(&mut buf[offset..]).await {
-                            if n == 0 { return; }
+                            if n == 0 {
+                                return;
+                            }
                             offset += n;
                             let req = String::from_utf8_lossy(&buf[..offset]);
                             if req.contains("\r\n\r\n") {
@@ -29,7 +33,9 @@ async fn start_performance_target_server() -> u16 {
                                 }
                                 return;
                             }
-                            if offset >= buf.len() { return; }
+                            if offset >= buf.len() {
+                                return;
+                            }
                         } else {
                             return;
                         }
@@ -42,7 +48,9 @@ async fn start_performance_target_server() -> u16 {
 }
 
 async fn start_performance_proxy(upstream_port: u16) -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind proxy");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind proxy");
     let port = listener.local_addr().unwrap().port();
 
     let upstream_config = UpstreamConfig {
@@ -55,12 +63,15 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
     };
 
     let config = Config {
-        proxy: ProxyConfig { port, pac_file: None },
+        proxy: ProxyConfig {
+            port,
+            pac_file: None,
+        },
         upstream: Some(upstream_config),
         exceptions: None,
     };
 
-    let proxy = Proxy::new(Arc::new(config), None);
+    let proxy = Proxy::new(Arc::new(config), None, None);
     tokio::spawn(async move {
         let _ = proxy.run_with_listener(listener).await;
     });
@@ -77,8 +88,10 @@ async fn test_proxy_throughput() {
     let requests_per_client = 100;
     let total_requests = concurrent_clients * requests_per_client;
 
-    println!("Starting performance test with {} clients, {} requests each (Total: {})",
-             concurrent_clients, requests_per_client, total_requests);
+    println!(
+        "Starting performance test with {} clients, {} requests each (Total: {})",
+        concurrent_clients, requests_per_client, total_requests
+    );
 
     let start_time = Instant::now();
     let mut tasks = Vec::new();
