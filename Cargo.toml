@@ -44,3 +44,9 @@ path = "src/lib.rs"
 [[bin]]
 name = "ferrovela"
 path = "src/main.rs"
+
+[profile.release]
+opt-level = "s" # or "z"
+codegen-units = 1
+lto = "thin" #alternatives "fat" or "false"
+strip = "debuginfo"
