@@ -31,3 +31,22 @@ tokio-stream = "0.1.18"
 
 [dev-dependencies]
 tempfile = "3.25.0"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "connect_bench"
+harness = false
+
+[lib]
+name = "ferrovela"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferrovela"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s" # or "z"
+codegen-units = 1
+lto = "thin" #alternatives "fat" or "false"
+strip = "debuginfo"
