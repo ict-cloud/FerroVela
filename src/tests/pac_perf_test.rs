@@ -10,7 +10,8 @@ async fn test_pac_loading_blocking() {
     let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
     // Write 50MB of spaces to make read slow
     let content = " ".repeat(50 * 1024 * 1024);
-    file.write_all(content.as_bytes()).expect("Failed to write PAC file");
+    file.write_all(content.as_bytes())
+        .expect("Failed to write PAC file");
 
     let sleep_start = Instant::now();
     let sleep_task = tokio::spawn(async {
@@ -18,9 +19,7 @@ async fn test_pac_loading_blocking() {
     });
 
     let pac_path_clone = pac_path.to_string();
-    let pac_task = tokio::spawn(async move {
-        PacEngine::new(&pac_path_clone).await
-    });
+    let pac_task = tokio::spawn(async move { PacEngine::new(&pac_path_clone).await });
 
     sleep_task.await.unwrap();
     let sleep_duration = sleep_start.elapsed();

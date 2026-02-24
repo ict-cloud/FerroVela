@@ -2,10 +2,10 @@ use anyhow::{Context as AnyhowContext, Result};
 use boa_engine::string::JsString;
 use boa_engine::{Context, JsValue, NativeFunction, Source};
 use log::error;
-use tokio::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
+use tokio::fs;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone)]
