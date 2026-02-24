@@ -1,9 +1,9 @@
+use crate::auth::basic::BasicAuthenticator;
+use crate::auth::mock_kerberos::MockKerberosAuthenticator;
+use crate::auth::kerberos::KerberosAuthenticator;
+use crate::auth::ntlm::NtlmAuthenticator;
+use crate::auth::UpstreamAuthenticator;
 use base64::Engine;
-use ferrovela::auth::basic::BasicAuthenticator;
-use ferrovela::auth::kerberos::KerberosAuthenticator;
-use ferrovela::auth::mock_kerberos::MockKerberosAuthenticator;
-use ferrovela::auth::ntlm::NtlmAuthenticator;
-use ferrovela::auth::UpstreamAuthenticator;
 
 #[test]
 fn test_basic_auth() {
