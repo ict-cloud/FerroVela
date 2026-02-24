@@ -1,6 +1,6 @@
-extern crate ferrovela;
-use ferrovela::config::{Config, ProxyConfig};
-use ferrovela::proxy::Proxy;
+
+use crate::config::{Config, ProxyConfig};
+use crate::proxy::Proxy;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
