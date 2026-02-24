@@ -164,6 +164,84 @@ async fn test_http_proxy_get_via_upstream() {
 }
 
 #[tokio::test]
+async fn test_http_proxy_get_via_upstream_auth() {
+    // Mock Upstream Proxy with Auth
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_port = upstream_listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        loop {
+            if let Ok((mut socket, _)) = upstream_listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0; 1024];
+                    loop {
+                        let n = socket.read(&mut buf).await.unwrap();
+                        if n == 0 {
+                            return;
+                        }
+                        let req = String::from_utf8_lossy(&buf[..n]);
+                        // println!("Mock Upstream received: {}", req); // Debugging
+
+                        // Check case-insensitive for header name, but value is case-sensitive
+                        if req.contains("Proxy-Authorization: Basic dXNlcjpwYXNz")
+                            || req.contains("proxy-authorization: Basic dXNlcjpwYXNz")
+                        {
+                            socket
+                                .write_all(b"HTTP/1.1 200 OK\r\n\r\nUpstream Hit with Auth")
+                                .await
+                                .unwrap();
+                            return;
+                        } else {
+                            // Challenge
+                            socket
+                                .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\nContent-Length: 0\r\n\r\n")
+                                .await
+                                .unwrap();
+                            // Continue reading for retry
+                            continue;
+                        }
+                    }
+                });
+            }
+        }
+    });
+
+    let upstream_config = UpstreamConfig {
+        auth_type: "basic".to_string(),
+        username: Some("user".to_string()),
+        password: Some("pass".to_string()),
+        domain: None,
+        workstation: None,
+        proxy_url: Some(format!("127.0.0.1:{}", upstream_port)),
+    };
+
+    let proxy_port = start_proxy(Some(upstream_config), None).await;
+
+    let mut client = TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+        .await
+        .expect("Failed to connect to proxy");
+
+    let target_url = "http://example.com/";
+    let req = format!(
+        "GET {} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n",
+        target_url
+    );
+
+    client.write_all(req.as_bytes()).await.unwrap();
+
+    let mut buf = [0; 1024];
+    let n = client.read(&mut buf).await.unwrap();
+    let resp = String::from_utf8_lossy(&buf[..n]);
+
+    assert!(resp.contains("200 OK"), "Expected 200 OK, got {}", resp);
+    assert!(
+        resp.contains("Upstream Hit with Auth"),
+        "Expected Upstream Hit with Auth, got {}",
+        resp
+    );
+}
+
+#[tokio::test]
 async fn test_http_proxy_get_exception() {
     let target_port = start_target_server().await;
 
