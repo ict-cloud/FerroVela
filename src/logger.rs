@@ -33,6 +33,7 @@ impl log::Log for SimpleLogger {
 pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let file = OpenOptions::new()
         .create(true)
+        .write(true)
         .append(true)
         .open("service.log")
         .expect("Failed to open service.log");
@@ -45,7 +46,10 @@ pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let static_logger: &'static SimpleLogger = Box::leak(boxed_logger);
 
     log::set_logger(static_logger).map_err(|e| {
-        Box::new(std::io::Error::other(e.to_string())) as Box<dyn std::error::Error + Send + Sync>
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e.to_string(),
+        )) as Box<dyn std::error::Error + Send + Sync>
     })?;
 
     log::set_max_level(log::LevelFilter::Info);

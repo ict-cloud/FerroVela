@@ -38,13 +38,15 @@ impl AuthSession for KerberosSession {
     fn step(&mut self, challenge: Option<&str>) -> Result<Option<String>> {
         let input_token = if let Some(c) = challenge {
             if c.trim().is_empty() {
-                None
-            } else if let Some(stripped) = c.strip_prefix("Negotiate ") {
-                Some(BASE64_STANDARD.decode(stripped.trim())?)
-            } else if c.trim() == "Negotiate" {
-                None
+                 None
+            } else if c.starts_with("Negotiate ") {
+                Some(BASE64_STANDARD.decode(c[10..].trim())?)
             } else {
-                return Err(anyhow::anyhow!("Invalid challenge format: {}", c));
+                 if c.trim() == "Negotiate" {
+                    None
+                } else {
+                     return Err(anyhow::anyhow!("Invalid challenge format: {}", c));
+                }
             }
         } else {
             None
@@ -70,8 +72,8 @@ impl AuthSession for KerberosSession {
         let ctx = self.ctx.as_mut().unwrap();
         match ctx.step(input_token.as_deref(), None) {
             Ok(Some(token)) => {
-                let encoded = BASE64_STANDARD.encode(&*token);
-                Ok(Some(format!("Negotiate {}", encoded)))
+                 let encoded = BASE64_STANDARD.encode(&*token);
+                 Ok(Some(format!("Negotiate {}", encoded)))
             }
             Ok(None) => Ok(None),
             Err(e) => Err(anyhow::anyhow!("GSSAPI step failed: {}", e)),
