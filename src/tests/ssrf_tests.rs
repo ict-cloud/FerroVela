@@ -1,3 +1,4 @@
+extern crate ferrovela;
 use ferrovela::config::{Config, ProxyConfig};
 use ferrovela::proxy::Proxy;
 use std::sync::Arc;
