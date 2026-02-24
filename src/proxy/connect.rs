@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use http_body_util::combinators::BoxBody;
+use memchr::memmem;
 use hyper::upgrade::Upgraded;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
@@ -189,9 +190,10 @@ async fn connect_via_upstream(
 }
 
 pub fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
+    if needle.is_empty() {
+        panic!("needle is empty");
+    }
+    memmem::find(haystack, needle)
 }
 
 fn parse_content_length(headers: &str) -> usize {

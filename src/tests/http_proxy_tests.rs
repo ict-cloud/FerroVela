@@ -187,11 +187,9 @@ async fn test_http_proxy_get_exception() {
         proxy_url: Some(format!("127.0.0.1:{}", upstream_port)),
     };
 
-    let mut exceptions = ExceptionsConfig {
+    let exceptions = ExceptionsConfig {
         hosts: vec!["127.0.0.1".to_string()],
-        ..Default::default()
     };
-    exceptions.compile();
 
     let proxy_port = start_proxy(Some(upstream_config), Some(exceptions)).await;
 
