@@ -127,15 +127,9 @@ pub async fn resolve_proxy(
 
     // Check Exceptions
     if let Some(exceptions) = &config.exceptions {
-        for pattern in &exceptions.hosts {
-            if pattern == host {
-                debug!("Exception matched exact host: {}, direct", host);
-                return None;
-            }
-            if pattern.starts_with("*.") && host.ends_with(&pattern[2..]) {
-                debug!("Exception matched glob: {}, direct", host);
-                return None;
-            }
+        if exceptions.matches(host) {
+            debug!("Exception matched host: {}, direct", host);
+            return None;
         }
     }
 
