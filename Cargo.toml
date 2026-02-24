@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Core async runtime - using only needed features instead of 'full'
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
 # HTTP server and client with minimal features
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
@@ -35,10 +35,6 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 
 [[bench]]
 name = "connect_bench"
-harness = false
-
-[[bench]]
-name = "exception_bench"
 harness = false
 
 [lib]

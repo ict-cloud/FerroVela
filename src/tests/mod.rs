@@ -6,8 +6,6 @@ mod http_proxy_tests;
 #[cfg(test)]
 mod main_tests;
 #[cfg(test)]
-mod pac_perf_test;
-#[cfg(test)]
 mod performance_tests;
 #[cfg(test)]
 mod streaming_benchmark;
