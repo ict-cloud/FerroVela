@@ -4,12 +4,12 @@ use crate::config::{
 use crate::pac::PacEngine;
 use crate::proxy::{Proxy, ProxySignal};
 use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
-use iced::{window, Alignment, Color, Element, Length, Subscription, Task};
+use iced::{window, Alignment, Color, Element, Subscription, Task};
 use log::{error, info};
 use std::fmt;
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::AbortHandle;
 
@@ -123,27 +123,6 @@ pub enum Message {
     External,
     WindowCloseRequested(window::Id),
     IdCaptured(window::Id),
-    LogsLoaded(Result<String, String>),
-}
-
-async fn read_logs_async() -> Result<String, String> {
-    match tokio::fs::File::open("service.log").await {
-        Ok(mut file) => match file.metadata().await {
-            Ok(metadata) => {
-                let len = metadata.len();
-                let offset = len.saturating_sub(10000);
-                if file.seek(std::io::SeekFrom::Start(offset)).await.is_ok() {
-                    let mut buffer = String::new();
-                    if file.read_to_string(&mut buffer).await.is_ok() {
-                        return Ok(buffer);
-                    }
-                }
-                Err("Failed to read logs".to_string())
-            }
-            Err(e) => Err(e.to_string()),
-        },
-        Err(e) => Err(e.to_string()),
-    }
 }
 
 impl ConfigEditor {
@@ -280,19 +259,23 @@ impl ConfigEditor {
         }
     }
 
-    fn load_logs(&self) -> Task<Message> {
-        Task::perform(read_logs_async(), Message::LogsLoaded)
+    fn load_logs(&mut self) {
+        if let Ok(mut file) = std::fs::File::open("service.log") {
+            if let Ok(metadata) = file.metadata() {
+                let len = metadata.len();
+                let offset = len.saturating_sub(10000);
+                if file.seek(SeekFrom::Start(offset)).is_ok() {
+                    let mut buffer = String::new();
+                    if file.read_to_string(&mut buffer).is_ok() {
+                        self.log_content = buffer;
+                    }
+                }
+            }
+        }
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::LogsLoaded(Ok(content)) => {
-                self.log_content = content;
-            }
-            Message::LogsLoaded(Err(e)) => {
-                // Keep old logs or show error? For now, do nothing as per original behavior.
-                error!("Failed to load logs: {}", e);
-            }
             Message::ProxyPortChanged(value) => {
                 self.proxy_port = value;
                 self.save_current_config();
@@ -373,19 +356,18 @@ impl ConfigEditor {
             Message::ToggleLogs => {
                 self.show_logs = !self.show_logs;
                 if self.show_logs {
-                    return self.load_logs();
+                    self.load_logs();
                 }
             }
             Message::Tick => {
                 if self.show_logs {
-                    return self.load_logs();
+                    self.load_logs();
                 }
             }
             Message::External => {
                 if let Some(id) = self.window_id {
                     // Minimize(false) usually restores it
-                    return window::minimize(id, false)
-                        .chain(window::gain_focus(id));
+                    return window::minimize(id, false).chain(window::gain_focus(id));
                 }
             }
             Message::WindowCloseRequested(id) => {
@@ -412,12 +394,12 @@ impl ConfigEditor {
         // IPC Subscription
         let ipc = Subscription::run(ipc_stream);
 
-        let events = iced::event::listen_with(|event, _status, id| {
-             match event {
-                 iced::Event::Window(window::Event::CloseRequested) => Some(Message::WindowCloseRequested(id)),
-                 iced::Event::Window(_) => Some(Message::IdCaptured(id)),
-                 _ => None
-             }
+        let events = iced::event::listen_with(|event, _status, id| match event {
+            iced::Event::Window(window::Event::CloseRequested) => {
+                Some(Message::WindowCloseRequested(id))
+            }
+            iced::Event::Window(_) => Some(Message::IdCaptured(id)),
+            _ => None,
         });
 
         Subscription::batch(vec![tick, ipc, events])
@@ -425,37 +407,15 @@ impl ConfigEditor {
 
     pub fn view(&self) -> Element<'_, Message> {
         if self.show_logs {
-            return self.view_logs();
+            return column![
+                button("Back").on_press(Message::ToggleLogs),
+                scrollable(text(&self.log_content))
+            ]
+            .padding(20)
+            .spacing(10)
+            .into();
         }
 
-        column![
-            self.view_service_control(),
-            self.view_proxy_config(),
-            self.view_upstream_config(),
-            self.view_exceptions_config(),
-            button("Save").on_press(Message::SavePressed),
-            text(&self.status)
-        ]
-        .spacing(20)
-        .padding(20)
-        .into()
-    }
-
-    fn view_logs(&self) -> Element<'_, Message> {
-        column![
-            button("Back").on_press(Message::ToggleLogs),
-            scrollable(text(&self.log_content))
-                .height(Length::Fill)
-                .width(Length::Fill)
-        ]
-        .padding(20)
-        .spacing(10)
-        .height(Length::Fill)
-        .width(Length::Fill)
-        .into()
-    }
-
-    fn view_service_control(&self) -> Element<'_, Message> {
         let status_color = match self.service_status {
             ServiceStatus::Running => Color::from_rgb(0.0, 0.8, 0.0),
             ServiceStatus::Stopped => Color::from_rgb(0.5, 0.5, 0.5),
@@ -470,23 +430,18 @@ impl ConfigEditor {
             ServiceStatus::Stopped => "Start",
         };
 
-        column![
-            text("Service Control").size(20),
-            row![
-                text("●").size(20).color(status_color),
-                text(status_text),
-                button(toggle_text).on_press(Message::ToggleService),
-                button("Show Logs").on_press(Message::ToggleLogs),
-            ]
-            .spacing(20)
-            .align_y(Alignment::Center)
+        let service_control = row![
+            text("●").size(20).color(status_color),
+            text(status_text),
+            button(toggle_text).on_press(Message::ToggleService),
+            button("Show Logs").on_press(Message::ToggleLogs),
         ]
         .spacing(20)
-        .into()
-    }
+        .align_y(Alignment::Center);
 
-    fn view_proxy_config(&self) -> Element<'_, Message> {
-        column![
+        let content = column![
+            text("Service Control").size(20),
+            service_control,
             text("Proxy Configuration").size(20),
             row![
                 text("Port:"),
@@ -497,14 +452,7 @@ impl ConfigEditor {
                 text("PAC File:"),
                 text_input("Path to PAC file", &self.pac_file).on_input(Message::PacFileChanged)
             ]
-            .spacing(10)
-        ]
-        .spacing(20)
-        .into()
-    }
-
-    fn view_upstream_config(&self) -> Element<'_, Message> {
-        column![
+            .spacing(10),
             text("Upstream Configuration").size(20),
             row![
                 text("Auth Type:"),
@@ -545,24 +493,21 @@ impl ConfigEditor {
                 text_input("http://upstream:port", &self.upstream_proxy_url)
                     .on_input(Message::UpstreamProxyUrlChanged)
             ]
-            .spacing(10)
-        ]
-        .spacing(20)
-        .into()
-    }
-
-    fn view_exceptions_config(&self) -> Element<'_, Message> {
-        column![
+            .spacing(10),
             text("Exceptions").size(20),
             row![
                 text("Hosts (comma separated):"),
                 text_input("localhost, 127.0.0.1", &self.exceptions_hosts)
                     .on_input(Message::ExceptionsHostsChanged)
             ]
-            .spacing(10)
+            .spacing(10),
+            button("Save").on_press(Message::SavePressed),
+            text(&self.status)
         ]
         .spacing(20)
-        .into()
+        .padding(20);
+
+        content.into()
     }
 }
 
@@ -573,73 +518,15 @@ fn ipc_stream() -> impl iced::futures::Stream<Item = Message> {
             // Lock the mutex. This is async mutex.
             let mut guard = guard_lock.lock().await;
             if let Some(rx) = guard.as_mut() {
-                 if let Some(cmd) = rx.recv().await {
-                     match cmd {
+                if let Some(cmd) = rx.recv().await {
+                    match cmd {
                         ProxySignal::Show => return Some((Message::External, ())),
-                     }
-                 }
+                    }
+                }
             }
         }
         // If receiver missing or closed, wait forever
         std::future::pending::<()>().await;
         None
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_read_logs_async() {
-        // Setup
-        use std::io::Write;
-        // Make sure we don't overwrite existing important logs if running in real env,
-        // but here we are in a sandbox.
-        // We might want to rename existing service.log if any.
-        let _ = std::fs::remove_file("service.log");
-
-        let mut file = std::fs::File::create("service.log").unwrap();
-        file.write_all(b"Hello World").unwrap();
-
-        // Test small file
-        let result = read_logs_async().await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Hello World");
-
-        // Test large file (truncation)
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open("service.log")
-            .unwrap();
-        let data = "a".repeat(11000);
-        file.write_all(data.as_bytes()).unwrap();
-
-        let result = read_logs_async().await;
-        assert!(result.is_ok());
-        let content = result.unwrap();
-        assert_eq!(content.len(), 10000);
-        // It should be the LAST 10000 bytes. Since all are 'a', it's just 10000 'a's.
-
-        // Let's try with distinct content
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open("service.log")
-            .unwrap();
-        let prefix = "a".repeat(1000);
-        let suffix = "b".repeat(10000);
-        file.write_all(prefix.as_bytes()).unwrap();
-        file.write_all(suffix.as_bytes()).unwrap();
-
-        let result = read_logs_async().await;
-        assert!(result.is_ok());
-        let content = result.unwrap();
-        assert_eq!(content.len(), 10000);
-        assert_eq!(content, suffix);
-
-        // Cleanup
-        std::fs::remove_file("service.log").unwrap();
-    }
 }

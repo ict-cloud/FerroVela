@@ -7,6 +7,13 @@ FerroVela is a Rust-based local proxy server designed to route HTTP/HTTPS traffi
 
 The application is built on **Hyper 1.0** and **Tokio** for high-performance asynchronous I/O.
 
+### Project Structure
+
+The project is structured as a dual-crate package (library and binary):
+-   `src/lib.rs`: The core library exposing modules like `auth`, `config`, `proxy`, `pac`, `ui`.
+-   `src/main.rs`: The binary entry point that uses the library.
+-   `benches/`: Criterion benchmarks for performance testing.
+
 ### Core Components
 
 1.  **Proxy Server (`src/proxy/`)**:
@@ -97,6 +104,7 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 
 ## Developer Notes
 
+-   **Benchmarks**: Run `cargo bench` to execute performance benchmarks (located in `benches/`).
 -   **Boa & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local Boa engine. Any new PAC functions must be registered inside the spawned thread closure in `src/pac.rs`.
 -   **Error Handling**: The application uses `anyhow` for error propagation and `log` for observability.
 -   **Security**: Credentials in `config.toml` are read as plain text.

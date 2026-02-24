@@ -13,7 +13,6 @@ use tokio::net::TcpStream;
 use crate::auth::UpstreamAuthenticator;
 use crate::config::Config;
 use crate::pac::PacEngine;
-pub use crate::proxy::http_utils::{find_header_value, find_subsequence, parse_content_length};
 use crate::proxy::{empty, resolve_proxy};
 
 pub async fn handle(
@@ -103,7 +102,7 @@ async fn connect_via_upstream(
                 }
                 Err(e) => {
                     error!("Auth session step error: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Auth error"));
+                    return Err(std::io::Error::other("Auth error"));
                 }
             }
         }
@@ -153,9 +152,12 @@ async fn connect_via_upstream(
 
                     // Ensure we read the full body
                     while header_buf.len() < total_len {
-                         let n = server.read_buf(&mut header_buf).await?;
-                         if n == 0 {
-                            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Upstream closed connection during body read"));
+                        let n = server.read_buf(&mut header_buf).await?;
+                        if n == 0 {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::UnexpectedEof,
+                                "Upstream closed connection during body read",
+                            ));
                         }
                     }
 
@@ -166,16 +168,22 @@ async fn connect_via_upstream(
                         // Break inner reading loop to send next request
                         break;
                     } else {
-                        return Err(std::io::Error::new(std::io::ErrorKind::Other, "407 without Proxy-Authenticate"));
+                        return Err(std::io::Error::other("407 without Proxy-Authenticate"));
                     }
                 } else {
-                    error!("Upstream proxy returned error: {}", headers_str.lines().next().unwrap_or(""));
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Upstream refused connection"));
+                    error!(
+                        "Upstream proxy returned error: {}",
+                        headers_str.lines().next().unwrap_or("")
+                    );
+                    return Err(std::io::Error::other("Upstream refused connection"));
                 }
             }
 
             if header_buf.len() > 16384 {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Header too large"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Header too large",
+                ));
             }
         }
     }
