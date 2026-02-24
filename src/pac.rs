@@ -2,10 +2,10 @@ use anyhow::{Context as AnyhowContext, Result};
 use boa_engine::string::JsString;
 use boa_engine::{Context, JsValue, NativeFunction, Source};
 use log::error;
-use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
+use tokio::fs;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone)]
@@ -21,55 +21,41 @@ struct PacRequest {
 }
 
 fn glob_match(pattern: &str, text: &str) -> bool {
-    let mut p = pattern.chars();
-    let mut t = text.chars();
+    let p_chars: Vec<char> = pattern.chars().collect();
+    let t_chars: Vec<char> = text.chars().collect();
 
-    let mut star_p = None;
-    let mut match_t = None;
+    let mut p_idx = 0;
+    let mut t_idx = 0;
+    let mut star_idx = None;
+    let mut match_idx = 0;
 
-    while let Some(t_char) = t.clone().next() {
-        let p_char = p.clone().next();
-
-        if let Some(pc) = p_char {
-            if pc == '?' || pc == t_char {
-                p.next();
-                t.next();
-                continue;
-            }
-            if pc == '*' {
-                p.next();
-                star_p = Some(p.clone());
-                match_t = Some(t.clone());
-                continue;
-            }
-        }
-
-        if let Some(sp) = star_p.as_ref() {
-            p = sp.clone();
-            if let Some(mt) = match_t.as_mut() {
-                mt.next();
-                t = mt.clone();
-                continue;
-            }
-        }
-
-        return false;
-    }
-
-    while let Some(c) = p.clone().next() {
-        if c == '*' {
-            p.next();
+    while t_idx < t_chars.len() {
+        if p_idx < p_chars.len() && (p_chars[p_idx] == '?' || p_chars[p_idx] == t_chars[t_idx]) {
+            p_idx += 1;
+            t_idx += 1;
+        } else if p_idx < p_chars.len() && p_chars[p_idx] == '*' {
+            star_idx = Some(p_idx);
+            match_idx = t_idx;
+            p_idx += 1;
+        } else if let Some(star) = star_idx {
+            p_idx = star + 1;
+            match_idx += 1;
+            t_idx = match_idx;
         } else {
-            break;
+            return false;
         }
     }
 
-    p.next().is_none()
+    while p_idx < p_chars.len() && p_chars[p_idx] == '*' {
+        p_idx += 1;
+    }
+
+    p_idx == p_chars.len()
 }
 
 impl PacEngine {
     pub async fn new(pac_url_or_path: &str) -> Result<Self> {
-        let script = if pac_url_or_path.starts_with("http") {
+        let script = Arc::new(if pac_url_or_path.starts_with("http") {
             let client = reqwest::Client::new();
             client
                 .get(pac_url_or_path)
@@ -79,8 +65,10 @@ impl PacEngine {
                 .await
                 .context("Failed to fetch PAC file")?
         } else {
-            fs::read_to_string(pac_url_or_path).context("Failed to read PAC file")?
-        };
+            fs::read_to_string(pac_url_or_path)
+                .await
+                .context("Failed to read PAC file")?
+        });
 
         // Determine number of workers based on available cores (fallback to 4)
         let num_workers = std::thread::available_parallelism()
@@ -102,7 +90,7 @@ impl PacEngine {
                     1,
                     NativeFunction::from_fn_ptr(|_, args, _| {
                         let host = args
-                            .get(0)
+                            .first()
                             .and_then(|v| v.as_string())
                             .map(|s| s.to_std_string_escaped())
                             .unwrap_or_default();
@@ -123,7 +111,7 @@ impl PacEngine {
                     2,
                     NativeFunction::from_fn_ptr(|_, args, _| {
                         let str_val = args
-                            .get(0)
+                            .first()
                             .and_then(|v| v.as_string())
                             .map(|s| s.to_std_string_escaped())
                             .unwrap_or_default();
@@ -138,7 +126,7 @@ impl PacEngine {
                     }),
                 );
 
-                if let Err(e) = context.eval(Source::from_bytes(&script_clone)) {
+                if let Err(e) = context.eval(Source::from_bytes(script_clone.as_bytes())) {
                     error!("Failed to evaluate PAC script: {}", e);
                 }
 
