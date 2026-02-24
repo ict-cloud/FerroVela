@@ -4,7 +4,7 @@ use crate::config::{
 use crate::pac::PacEngine;
 use crate::proxy::{Proxy, ProxySignal};
 use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
-use iced::{window, Alignment, Color, Element, Subscription, Task};
+use iced::{window, Alignment, Color, Element, Length, Subscription, Task};
 use log::{error, info};
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
@@ -408,15 +408,37 @@ impl ConfigEditor {
 
     pub fn view(&self) -> Element<'_, Message> {
         if self.show_logs {
-            return column![
-                button("Back").on_press(Message::ToggleLogs),
-                scrollable(text(&self.log_content))
-            ]
-            .padding(20)
-            .spacing(10)
-            .into();
+            return self.view_logs();
         }
 
+        column![
+            self.view_service_control(),
+            self.view_proxy_config(),
+            self.view_upstream_config(),
+            self.view_exceptions_config(),
+            button("Save").on_press(Message::SavePressed),
+            text(&self.status)
+        ]
+        .spacing(20)
+        .padding(20)
+        .into()
+    }
+
+    fn view_logs(&self) -> Element<'_, Message> {
+        column![
+            button("Back").on_press(Message::ToggleLogs),
+            scrollable(text(&self.log_content))
+                .height(Length::Fill)
+                .width(Length::Fill)
+        ]
+        .padding(20)
+        .spacing(10)
+        .height(Length::Fill)
+        .width(Length::Fill)
+        .into()
+    }
+
+    fn view_service_control(&self) -> Element<'_, Message> {
         let status_color = match self.service_status {
             ServiceStatus::Running => Color::from_rgb(0.0, 0.8, 0.0),
             ServiceStatus::Stopped => Color::from_rgb(0.5, 0.5, 0.5),
@@ -431,18 +453,23 @@ impl ConfigEditor {
             ServiceStatus::Stopped => "Start",
         };
 
-        let service_control = row![
-            text("●").size(20).color(status_color),
-            text(status_text),
-            button(toggle_text).on_press(Message::ToggleService),
-            button("Show Logs").on_press(Message::ToggleLogs),
+        column![
+            text("Service Control").size(20),
+            row![
+                text("●").size(20).color(status_color),
+                text(status_text),
+                button(toggle_text).on_press(Message::ToggleService),
+                button("Show Logs").on_press(Message::ToggleLogs),
+            ]
+            .spacing(20)
+            .align_y(Alignment::Center)
         ]
         .spacing(20)
-        .align_y(Alignment::Center);
+        .into()
+    }
 
-        let content = column![
-            text("Service Control").size(20),
-            service_control,
+    fn view_proxy_config(&self) -> Element<'_, Message> {
+        column![
             text("Proxy Configuration").size(20),
             row![
                 text("Port:"),
@@ -453,7 +480,14 @@ impl ConfigEditor {
                 text("PAC File:"),
                 text_input("Path to PAC file", &self.pac_file).on_input(Message::PacFileChanged)
             ]
-            .spacing(10),
+            .spacing(10)
+        ]
+        .spacing(20)
+        .into()
+    }
+
+    fn view_upstream_config(&self) -> Element<'_, Message> {
+        column![
             text("Upstream Configuration").size(20),
             row![
                 text("Auth Type:"),
@@ -494,21 +528,24 @@ impl ConfigEditor {
                 text_input("http://upstream:port", &self.upstream_proxy_url)
                     .on_input(Message::UpstreamProxyUrlChanged)
             ]
-            .spacing(10),
+            .spacing(10)
+        ]
+        .spacing(20)
+        .into()
+    }
+
+    fn view_exceptions_config(&self) -> Element<'_, Message> {
+        column![
             text("Exceptions").size(20),
             row![
                 text("Hosts (comma separated):"),
                 text_input("localhost, 127.0.0.1", &self.exceptions_hosts)
                     .on_input(Message::ExceptionsHostsChanged)
             ]
-            .spacing(10),
-            button("Save").on_press(Message::SavePressed),
-            text(&self.status)
+            .spacing(10)
         ]
         .spacing(20)
-        .padding(20);
-
-        content.into()
+        .into()
     }
 }
 
