@@ -1,14 +1,8 @@
 use anyhow::Result;
 
-use super::{AuthSession, UpstreamAuthenticator};
+use super::{UpstreamAuthenticator, AuthSession};
 
 pub struct MockKerberosAuthenticator;
-
-impl Default for MockKerberosAuthenticator {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl MockKerberosAuthenticator {
     pub fn new() -> Self {
