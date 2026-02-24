@@ -570,7 +570,11 @@ mod tests {
         assert_eq!(result.unwrap(), "Hello World");
 
         // Test large file (truncation)
-        let mut file = std::fs::OpenOptions::new().write(true).truncate(true).open("service.log").unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open("service.log")
+            .unwrap();
         let data = "a".repeat(11000);
         file.write_all(data.as_bytes()).unwrap();
 
@@ -581,7 +585,11 @@ mod tests {
         // It should be the LAST 10000 bytes. Since all are 'a', it's just 10000 'a's.
 
         // Let's try with distinct content
-        let mut file = std::fs::OpenOptions::new().write(true).truncate(true).open("service.log").unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open("service.log")
+            .unwrap();
         let prefix = "a".repeat(1000);
         let suffix = "b".repeat(10000);
         file.write_all(prefix.as_bytes()).unwrap();
