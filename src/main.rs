@@ -39,7 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     if let Ok(mut stream) = TcpStream::connect(&addr) {
         // Send Magic Request
-        let request = "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+        let request =
+            "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
         if stream.write_all(request.as_bytes()).is_ok() {
             let mut buffer = [0; 1024];
             if let Ok(n) = stream.read(&mut buffer) {
@@ -52,7 +53,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
         info!("Port {} is open but did not respond correctly. Starting new instance (User might need to change port).", config_port);
     } else {
-        info!("No instance found on {}. Starting new instance.", config_port);
+        info!(
+            "No instance found on {}. Starting new instance.",
+            config_port
+        );
     }
 
     // Run the UI

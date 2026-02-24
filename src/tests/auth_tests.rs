@@ -1,9 +1,9 @@
+use base64::Engine;
 use ferrovela::auth::basic::BasicAuthenticator;
-use ferrovela::auth::mock_kerberos::MockKerberosAuthenticator;
 use ferrovela::auth::kerberos::KerberosAuthenticator;
+use ferrovela::auth::mock_kerberos::MockKerberosAuthenticator;
 use ferrovela::auth::ntlm::NtlmAuthenticator;
 use ferrovela::auth::UpstreamAuthenticator;
-use base64::Engine;
 
 #[test]
 fn test_basic_auth() {

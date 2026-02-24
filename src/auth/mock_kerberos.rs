@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{UpstreamAuthenticator, AuthSession};
+use super::{AuthSession, UpstreamAuthenticator};
 
 pub struct MockKerberosAuthenticator;
 
