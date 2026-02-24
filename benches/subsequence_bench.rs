@@ -40,27 +40,57 @@ fn bench_subsequence(c: &mut Criterion) {
     let mut group = c.benchmark_group("find_subsequence");
 
     group.bench_function("current_small", |b| {
-        b.iter(|| current_find_subsequence(criterion::black_box(&small_haystack), criterion::black_box(needle)))
+        b.iter(|| {
+            current_find_subsequence(
+                criterion::black_box(&small_haystack),
+                criterion::black_box(needle),
+            )
+        })
     });
 
     group.bench_function("memchr_small", |b| {
-        b.iter(|| optimized_find_subsequence(criterion::black_box(&small_haystack), criterion::black_box(needle)))
+        b.iter(|| {
+            optimized_find_subsequence(
+                criterion::black_box(&small_haystack),
+                criterion::black_box(needle),
+            )
+        })
     });
 
     group.bench_function("current_large", |b| {
-        b.iter(|| current_find_subsequence(criterion::black_box(&large_haystack), criterion::black_box(needle)))
+        b.iter(|| {
+            current_find_subsequence(
+                criterion::black_box(&large_haystack),
+                criterion::black_box(needle),
+            )
+        })
     });
 
     group.bench_function("memchr_large", |b| {
-        b.iter(|| optimized_find_subsequence(criterion::black_box(&large_haystack), criterion::black_box(needle)))
+        b.iter(|| {
+            optimized_find_subsequence(
+                criterion::black_box(&large_haystack),
+                criterion::black_box(needle),
+            )
+        })
     });
 
     group.bench_function("current_early", |b| {
-        b.iter(|| current_find_subsequence(criterion::black_box(&early_haystack), criterion::black_box(needle)))
+        b.iter(|| {
+            current_find_subsequence(
+                criterion::black_box(&early_haystack),
+                criterion::black_box(needle),
+            )
+        })
     });
 
     group.bench_function("memchr_early", |b| {
-        b.iter(|| optimized_find_subsequence(criterion::black_box(&early_haystack), criterion::black_box(needle)))
+        b.iter(|| {
+            optimized_find_subsequence(
+                criterion::black_box(&early_haystack),
+                criterion::black_box(needle),
+            )
+        })
     });
 
     group.finish();

@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use bytes::{Bytes, BytesMut};
 use http_body_util::combinators::BoxBody;
-use memchr::memmem;
 use hyper::upgrade::Upgraded;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use log::{debug, error};
+use memchr::memmem;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
