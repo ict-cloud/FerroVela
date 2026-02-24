@@ -37,6 +37,10 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 name = "connect_bench"
 harness = false
 
+[[bench]]
+name = "exception_bench"
+harness = false
+
 [lib]
 name = "ferrovela"
 path = "src/lib.rs"
