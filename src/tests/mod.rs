@@ -9,3 +9,5 @@ mod main_tests;
 mod performance_tests;
 #[cfg(test)]
 mod ui_tests;
+#[cfg(test)]
+mod pac_perf_test;
