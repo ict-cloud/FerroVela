@@ -9,5 +9,3 @@ mod pac_perf_test;
 mod performance_tests;
 #[cfg(test)]
 mod ui_tests;
-#[cfg(test)]
-mod performance_tests;
