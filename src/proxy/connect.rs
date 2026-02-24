@@ -101,7 +101,7 @@ async fn connect_via_upstream(
                 }
                 Err(e) => {
                     error!("Auth session step error: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Auth error"));
+                    return Err(std::io::Error::other("Auth error"));
                 }
             }
         }
@@ -151,9 +151,12 @@ async fn connect_via_upstream(
 
                     // Ensure we read the full body
                     while header_buf.len() < total_len {
-                         let n = server.read_buf(&mut header_buf).await?;
-                         if n == 0 {
-                            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Upstream closed connection during body read"));
+                        let n = server.read_buf(&mut header_buf).await?;
+                        if n == 0 {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::UnexpectedEof,
+                                "Upstream closed connection during body read",
+                            ));
                         }
                     }
 
@@ -164,28 +167,35 @@ async fn connect_via_upstream(
                         // Break inner reading loop to send next request
                         break;
                     } else {
-                        return Err(std::io::Error::new(std::io::ErrorKind::Other, "407 without Proxy-Authenticate"));
+                        return Err(std::io::Error::other("407 without Proxy-Authenticate"));
                     }
                 } else {
-                    error!("Upstream proxy returned error: {}", headers_str.lines().next().unwrap_or(""));
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Upstream refused connection"));
+                    error!(
+                        "Upstream proxy returned error: {}",
+                        headers_str.lines().next().unwrap_or("")
+                    );
+                    return Err(std::io::Error::other("Upstream refused connection"));
                 }
             }
 
             if header_buf.len() > 16384 {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Header too large"));
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Header too large",
+                ));
             }
         }
     }
 }
 
-fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+pub fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
 }
 
 fn parse_content_length(headers: &str) -> usize {
+    let key = "content-length:";
     for line in headers.lines() {
         if line.len() >= 15 && line.as_bytes()[..15].eq_ignore_ascii_case(b"content-length:") {
             return line[15..].trim().parse().unwrap_or(0);
@@ -195,14 +205,12 @@ fn parse_content_length(headers: &str) -> usize {
 }
 
 fn find_header_value(headers: &str, key: &str) -> Option<String> {
-    let key_lower = key.to_lowercase();
     for line in headers.lines() {
-        let line_lower = line.to_lowercase();
-        if line_lower.starts_with(&format!("{}:", key_lower)) {
-             // We need original case value, so we find split index in original line
-             if let Some(idx) = line.find(':') {
-                 return Some(line[idx+1..].trim().to_string());
-             }
+        if line.len() > key.len()
+            && line.as_bytes()[key.len()] == b':'
+            && line[..key.len()].eq_ignore_ascii_case(key)
+        {
+            return Some(line[key.len() + 1..].trim().to_string());
         }
     }
     None

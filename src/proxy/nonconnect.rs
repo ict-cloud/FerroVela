@@ -168,20 +168,20 @@ async fn handle_upstream(
 
         // Add Proxy-Authorization
         if let Some(session) = &mut auth_session {
-             match session.step(challenge.as_deref()) {
-                 Ok(Some(h)) => {
-                     if let Ok(val) = HeaderValue::from_str(&h) {
-                         builder = builder.header(hyper::header::PROXY_AUTHORIZATION, val);
-                     }
-                 }
-                 Ok(None) => {},
-                 Err(e) => {
-                     error!("Auth error: {}", e);
-                     let mut resp = Response::new(full("Internal Server Error: Auth Failed"));
-                     *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                     return Ok(resp);
-                 }
-             }
+            match session.step(challenge.as_deref()) {
+                Ok(Some(h)) => {
+                    if let Ok(val) = HeaderValue::from_str(&h) {
+                        builder = builder.header(hyper::header::PROXY_AUTHORIZATION, val);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!("Auth error: {}", e);
+                    let mut resp = Response::new(full("Internal Server Error: Auth Failed"));
+                    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(resp);
+                }
+            }
         }
 
         let req = builder.body(full(body_bytes.clone())).unwrap();
@@ -199,33 +199,34 @@ async fn handle_upstream(
             }
         };
 
-        if resp.status() == StatusCode::PROXY_AUTHENTICATION_REQUIRED { // 407
-             if auth_session.is_none() {
-                 return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
-             }
+        if resp.status() == StatusCode::PROXY_AUTHENTICATION_REQUIRED {
+            // 407
+            if auth_session.is_none() {
+                return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+            }
 
-             // Extract Challenge
-             if let Some(val) = resp.headers().get("proxy-authenticate") {
-                 if let Ok(s) = val.to_str() {
-                     challenge = Some(s.to_string());
-                 } else {
-                     challenge = None;
-                 }
-             } else {
-                 challenge = None;
-             }
+            // Extract Challenge
+            if let Some(val) = resp.headers().get("proxy-authenticate") {
+                if let Ok(s) = val.to_str() {
+                    challenge = Some(s.to_string());
+                } else {
+                    challenge = None;
+                }
+            } else {
+                challenge = None;
+            }
 
-             // Check if we should pass through 407 (e.g. auth failed after attempts)
-             // If we got 407 and challenge is None, it's weird, but maybe pass through.
-             if challenge.is_none() {
-                  return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
-             }
+            // Check if we should pass through 407 (e.g. auth failed after attempts)
+            // If we got 407 and challenge is None, it's weird, but maybe pass through.
+            if challenge.is_none() {
+                return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+            }
 
-             // Drain body so we can reuse connection
-             let _ = resp.collect().await; // Ignore errors during drain
+            // Drain body so we can reuse connection
+            let _ = resp.collect().await; // Ignore errors during drain
 
-             // Continue loop
-             continue;
+            // Continue loop
+            continue;
         } else {
             // Success or other error
             return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
