@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 
 #[derive(Default, Debug, Deserialize, Serialize, Clone)]
@@ -55,11 +56,44 @@ impl Default for UpstreamConfig {
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ExceptionsConfig {
     pub hosts: Vec<String>,
+    #[serde(skip)]
+    pub exact: HashSet<String>,
+    #[serde(skip)]
+    pub wildcards: Vec<String>,
+}
+
+impl ExceptionsConfig {
+    pub fn compile(&mut self) {
+        self.exact.clear();
+        self.wildcards.clear();
+        for pattern in &self.hosts {
+            if pattern.starts_with("*.") {
+                self.wildcards.push(pattern[2..].to_string());
+            } else {
+                self.exact.insert(pattern.clone());
+            }
+        }
+    }
+
+    pub fn matches(&self, host: &str) -> bool {
+        if self.exact.contains(host) {
+            return true;
+        }
+        for suffix in &self.wildcards {
+            if host.ends_with(suffix) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 pub fn load_config(path: &str) -> Result<Config> {
     let content = fs::read_to_string(path)?;
-    let config: Config = toml::from_str(&content)?;
+    let mut config: Config = toml::from_str(&content)?;
+    if let Some(exceptions) = &mut config.exceptions {
+        exceptions.compile();
+    }
     Ok(config)
 }
 

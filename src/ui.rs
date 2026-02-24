@@ -241,7 +241,12 @@ impl ConfigEditor {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
-            Some(ExceptionsConfig { hosts })
+            let mut exc = ExceptionsConfig {
+                hosts,
+                ..Default::default()
+            };
+            exc.compile();
+            Some(exc)
         };
 
         Config {

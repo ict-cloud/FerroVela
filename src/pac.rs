@@ -2,10 +2,10 @@ use anyhow::{Context as AnyhowContext, Result};
 use boa_engine::string::JsString;
 use boa_engine::{Context, JsValue, NativeFunction, Source};
 use log::error;
-use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
+use tokio::fs;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Clone)]
@@ -55,7 +55,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 
 impl PacEngine {
     pub async fn new(pac_url_or_path: &str) -> Result<Self> {
-        let script = if pac_url_or_path.starts_with("http") {
+        let script = Arc::new(if pac_url_or_path.starts_with("http") {
             let client = reqwest::Client::new();
             client
                 .get(pac_url_or_path)
@@ -65,8 +65,10 @@ impl PacEngine {
                 .await
                 .context("Failed to fetch PAC file")?
         } else {
-            fs::read_to_string(pac_url_or_path).context("Failed to read PAC file")?
-        };
+            fs::read_to_string(pac_url_or_path)
+                .await
+                .context("Failed to read PAC file")?
+        });
 
         // Determine number of workers based on available cores (fallback to 4)
         let num_workers = std::thread::available_parallelism()
@@ -124,7 +126,7 @@ impl PacEngine {
                     }),
                 );
 
-                if let Err(e) = context.eval(Source::from_bytes(&script_clone)) {
+                if let Err(e) = context.eval(Source::from_bytes(script_clone.as_bytes())) {
                     error!("Failed to evaluate PAC script: {}", e);
                 }
 
