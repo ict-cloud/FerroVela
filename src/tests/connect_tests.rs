@@ -1,4 +1,4 @@
-use ferrovela::proxy::connect::find_subsequence;
+use ferrovela::proxy::http_utils::find_subsequence;
 
 #[test]
 fn test_find_subsequence() {
