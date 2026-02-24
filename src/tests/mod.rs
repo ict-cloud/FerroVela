@@ -9,3 +9,4 @@ mod main_tests;
 mod performance_tests;
 #[cfg(test)]
 mod ui_tests;
+mod ssrf_tests;

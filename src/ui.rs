@@ -91,6 +91,8 @@ pub struct ConfigEditor {
     pub upstream_workstation: String,
     pub upstream_proxy_url: String,
     pub exceptions_hosts: String,
+    // Advanced
+    pub allow_private_ips: bool,
     // Status message
     pub status: String,
     // Service control
@@ -176,6 +178,7 @@ impl ConfigEditor {
                     .as_ref()
                     .map(|e| e.hosts.join(", "))
                     .unwrap_or_default(),
+                allow_private_ips: config.proxy.allow_private_ips,
                 status: String::new(),
                 service_status: ServiceStatus::Stopped,
                 proxy_handle: None,
@@ -245,7 +248,11 @@ impl ConfigEditor {
         };
 
         Config {
-            proxy: ProxyConfig { port, pac_file },
+            proxy: ProxyConfig {
+                port,
+                pac_file,
+                allow_private_ips: self.allow_private_ips,
+            },
             upstream,
             exceptions,
         }

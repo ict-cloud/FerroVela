@@ -161,6 +161,7 @@ async fn start_proxy(
         proxy: ProxyConfig {
             port,
             pac_file: None,
+            allow_private_ips: true,
         },
         upstream,
         exceptions,

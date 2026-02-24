@@ -66,6 +66,7 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
         proxy: ProxyConfig {
             port,
             pac_file: None,
+            allow_private_ips: true,
         },
         upstream: Some(upstream_config),
         exceptions: None,

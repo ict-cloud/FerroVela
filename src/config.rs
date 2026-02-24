@@ -14,6 +14,8 @@ pub struct ProxyConfig {
     #[serde(default = "default_port")]
     pub port: u16,
     pub pac_file: Option<String>,
+    #[serde(default)]
+    pub allow_private_ips: bool,
 }
 
 impl Default for ProxyConfig {
@@ -21,6 +23,7 @@ impl Default for ProxyConfig {
         Self {
             port: default_port(),
             pac_file: None,
+            allow_private_ips: false,
         }
     }
 }
