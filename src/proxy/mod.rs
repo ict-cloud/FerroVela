@@ -17,6 +17,7 @@ use crate::config::Config;
 use crate::pac::PacEngine;
 
 pub mod connect;
+pub mod http_utils;
 pub mod nonconnect;
 
 #[derive(Debug, Clone)]
@@ -32,11 +33,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn new(
-        config: Arc<Config>,
-        pac: Option<PacEngine>,
-        signal_sender: Option<Sender<ProxySignal>>,
-    ) -> Self {
+    pub fn new(config: Arc<Config>, pac: Option<PacEngine>, signal_sender: Option<Sender<ProxySignal>>) -> Self {
         let authenticator = if let Some(upstream_conf) = &config.upstream {
             create_authenticator(upstream_conf).map(Arc::new)
         } else {

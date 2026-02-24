@@ -125,17 +125,6 @@ Total Duration: 800.16ms
 Requests Per Second (RPS): 6248.71
 ```
 
-## Benchmarks
-
-FerroVela includes benchmarks using `criterion` to measure the performance of the proxy connection handling.
-
-To run the benchmarks:
-```bash
-cargo bench
-```
-
-This will run the `connect_bench` benchmark and report the throughput of connection establishment and simple request handling.
-
 ## Dependencies
 
 - `hyper`: For low-level HTTP handling.
