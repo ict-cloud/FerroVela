@@ -34,14 +34,6 @@ memchr = "2.8.0"
 tempfile = "3.25.0"
 criterion = { version = "0.5", features = ["async_tokio"] }
 
-[[bench]]
-name = "connect_bench"
-harness = false
-
-[[bench]]
-name = "exception_bench"
-harness = false
-
 [lib]
 name = "ferrovela"
 path = "src/lib.rs"
@@ -55,3 +47,13 @@ opt-level = "s" # or "z"
 codegen-units = 1
 lto = "thin" #alternatives "fat" or "false"
 strip = "debuginfo"
+
+[[bench]]
+name = "connect_bench"
+harness = false
+path = "benches/connect_bench.rs"
+
+[[bench]]
+name = "subsequence_bench"
+harness = false
+path = "benches/subsequence_bench.rs"
