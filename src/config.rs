@@ -2,11 +2,21 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-#[derive(Default, Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub proxy: ProxyConfig,
     pub upstream: Option<UpstreamConfig>,
     pub exceptions: Option<ExceptionsConfig>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            proxy: ProxyConfig::default(),
+            upstream: None,
+            exceptions: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -57,6 +67,22 @@ pub struct ExceptionsConfig {
     pub hosts: Vec<String>,
 }
 
+impl ExceptionsConfig {
+    pub fn matches(&self, host: &str) -> bool {
+        self.hosts.iter().any(|pattern| Self::host_matches_pattern(pattern, host))
+    }
+
+    fn host_matches_pattern(pattern: &str, host: &str) -> bool {
+        if pattern == host {
+            return true;
+        }
+        if pattern.starts_with("*.") && host.ends_with(&pattern[2..]) {
+            return true;
+        }
+        false
+    }
+}
+
 pub fn load_config(path: &str) -> Result<Config> {
     let content = fs::read_to_string(path)?;
     let config: Config = toml::from_str(&content)?;
@@ -67,4 +93,60 @@ pub fn save_config(path: &str, config: &Config) -> Result<()> {
     let content = toml::to_string(config)?;
     fs::write(path, content)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_exceptions_exact_match() {
+        let exceptions = ExceptionsConfig {
+            hosts: vec!["example.com".to_string()],
+        };
+        assert!(exceptions.matches("example.com"));
+        assert!(!exceptions.matches("sub.example.com"));
+        assert!(!exceptions.matches("other.com"));
+    }
+
+    #[test]
+    fn test_exceptions_wildcard_match() {
+        let exceptions = ExceptionsConfig {
+            hosts: vec!["*.example.com".to_string()],
+        };
+        // Matches because suffix matches
+        assert!(exceptions.matches("sub.example.com"));
+        assert!(exceptions.matches("deep.sub.example.com"));
+
+        // Edge case behavior: matches if ends with "example.com"
+        assert!(exceptions.matches("myexample.com"));
+        assert!(exceptions.matches("example.com"));
+
+        assert!(!exceptions.matches("other.com"));
+    }
+
+    #[test]
+    fn test_exceptions_multiple_patterns() {
+        let exceptions = ExceptionsConfig {
+            hosts: vec![
+                "exact.com".to_string(),
+                "*.wild.com".to_string(),
+            ],
+        };
+        assert!(exceptions.matches("exact.com"));
+        assert!(!exceptions.matches("sub.exact.com"));
+
+        assert!(exceptions.matches("sub.wild.com"));
+        assert!(exceptions.matches("wild.com")); // matches suffix
+
+        assert!(!exceptions.matches("other.com"));
+    }
+
+    #[test]
+    fn test_exceptions_empty() {
+        let exceptions = ExceptionsConfig {
+            hosts: vec![],
+        };
+        assert!(!exceptions.matches("example.com"));
+    }
 }
