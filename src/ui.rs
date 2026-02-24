@@ -4,7 +4,7 @@ use crate::config::{
 use crate::pac::PacEngine;
 use crate::proxy::{Proxy, ProxySignal};
 use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
-use iced::{window, Alignment, Color, Element, Subscription, Task};
+use iced::{window, Alignment, Color, Element, Length, Subscription, Task};
 use log::{error, info};
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
@@ -427,9 +427,13 @@ impl ConfigEditor {
         column![
             button("Back").on_press(Message::ToggleLogs),
             scrollable(text(&self.log_content))
+                .height(Length::Fill)
+                .width(Length::Fill)
         ]
         .padding(20)
         .spacing(10)
+        .height(Length::Fill)
+        .width(Length::Fill)
         .into()
     }
 
