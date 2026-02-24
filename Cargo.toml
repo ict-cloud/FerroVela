@@ -28,6 +28,7 @@ iced = { version = "0.14", features = ["tokio"] }
 libgssapi = { version = "0.7", default-features = false }
 ntlmclient = "0.2.0"
 tokio-stream = "0.1.18"
+memchr = "2.8.0"
 
 [dev-dependencies]
 tempfile = "3.25.0"
@@ -50,3 +51,7 @@ opt-level = "s" # or "z"
 codegen-units = 1
 lto = "thin" #alternatives "fat" or "false"
 strip = "debuginfo"
+
+[[bench]]
+name = "subsequence_bench"
+harness = false
