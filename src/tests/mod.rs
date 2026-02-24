@@ -1,5 +1,7 @@
 mod auth_tests;
 #[cfg(test)]
+mod connect_tests;
+#[cfg(test)]
 mod http_proxy_tests;
 #[cfg(test)]
 mod main_tests;
@@ -9,5 +11,8 @@ mod performance_tests;
 mod streaming_benchmark;
 #[cfg(test)]
 mod ui_tests;
+mod pac_perf_test;
 #[cfg(test)]
 mod performance_tests;
+#[cfg(test)]
+mod ui_tests;

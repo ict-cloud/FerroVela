@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Core async runtime - using only needed features instead of 'full'
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros", "fs"] }
 # HTTP server and client with minimal features
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
@@ -31,3 +31,26 @@ tokio-stream = "0.1.18"
 
 [dev-dependencies]
 tempfile = "3.25.0"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "connect_bench"
+harness = false
+
+[[bench]]
+name = "exception_bench"
+harness = false
+
+[lib]
+name = "ferrovela"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ferrovela"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s" # or "z"
+codegen-units = 1
+lto = "thin" #alternatives "fat" or "false"
+strip = "debuginfo"

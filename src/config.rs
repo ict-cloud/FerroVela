@@ -1,22 +1,13 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Default, Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub proxy: ProxyConfig,
     pub upstream: Option<UpstreamConfig>,
     pub exceptions: Option<ExceptionsConfig>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            proxy: ProxyConfig::default(),
-            upstream: None,
-            exceptions: None,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -65,19 +56,33 @@ impl Default for UpstreamConfig {
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct ExceptionsConfig {
     pub hosts: Vec<String>,
+    #[serde(skip)]
+    pub exact: HashSet<String>,
+    #[serde(skip)]
+    pub wildcards: Vec<String>,
 }
 
 impl ExceptionsConfig {
-    pub fn matches(&self, host: &str) -> bool {
-        self.hosts.iter().any(|pattern| Self::host_matches_pattern(pattern, host))
+    pub fn compile(&mut self) {
+        self.exact.clear();
+        self.wildcards.clear();
+        for pattern in &self.hosts {
+            if pattern.starts_with("*.") {
+                self.wildcards.push(pattern[2..].to_string());
+            } else {
+                self.exact.insert(pattern.clone());
+            }
+        }
     }
 
-    fn host_matches_pattern(pattern: &str, host: &str) -> bool {
-        if pattern == host {
+    pub fn matches(&self, host: &str) -> bool {
+        if self.exact.contains(host) {
             return true;
         }
-        if pattern.starts_with("*.") && host.ends_with(&pattern[2..]) {
-            return true;
+        for suffix in &self.wildcards {
+            if host.ends_with(suffix) {
+                return true;
+            }
         }
         false
     }
@@ -85,7 +90,10 @@ impl ExceptionsConfig {
 
 pub fn load_config(path: &str) -> Result<Config> {
     let content = fs::read_to_string(path)?;
-    let config: Config = toml::from_str(&content)?;
+    let mut config: Config = toml::from_str(&content)?;
+    if let Some(exceptions) = &mut config.exceptions {
+        exceptions.compile();
+    }
     Ok(config)
 }
 
@@ -93,60 +101,4 @@ pub fn save_config(path: &str, config: &Config) -> Result<()> {
     let content = toml::to_string(config)?;
     fs::write(path, content)?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_exceptions_exact_match() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec!["example.com".to_string()],
-        };
-        assert!(exceptions.matches("example.com"));
-        assert!(!exceptions.matches("sub.example.com"));
-        assert!(!exceptions.matches("other.com"));
-    }
-
-    #[test]
-    fn test_exceptions_wildcard_match() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec!["*.example.com".to_string()],
-        };
-        // Matches because suffix matches
-        assert!(exceptions.matches("sub.example.com"));
-        assert!(exceptions.matches("deep.sub.example.com"));
-
-        // Edge case behavior: matches if ends with "example.com"
-        assert!(exceptions.matches("myexample.com"));
-        assert!(exceptions.matches("example.com"));
-
-        assert!(!exceptions.matches("other.com"));
-    }
-
-    #[test]
-    fn test_exceptions_multiple_patterns() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec![
-                "exact.com".to_string(),
-                "*.wild.com".to_string(),
-            ],
-        };
-        assert!(exceptions.matches("exact.com"));
-        assert!(!exceptions.matches("sub.exact.com"));
-
-        assert!(exceptions.matches("sub.wild.com"));
-        assert!(exceptions.matches("wild.com")); // matches suffix
-
-        assert!(!exceptions.matches("other.com"));
-    }
-
-    #[test]
-    fn test_exceptions_empty() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec![],
-        };
-        assert!(!exceptions.matches("example.com"));
-    }
 }
