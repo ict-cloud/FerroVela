@@ -88,7 +88,7 @@ impl PacEngine {
                     1,
                     NativeFunction::from_fn_ptr(|_, args, _| {
                         let host = args
-                            .get(0)
+                            .first()
                             .and_then(|v| v.as_string())
                             .map(|s| s.to_std_string_escaped())
                             .unwrap_or_default();
@@ -109,7 +109,7 @@ impl PacEngine {
                     2,
                     NativeFunction::from_fn_ptr(|_, args, _| {
                         let str_val = args
-                            .get(0)
+                            .first()
                             .and_then(|v| v.as_string())
                             .map(|s| s.to_std_string_escaped())
                             .unwrap_or_default();

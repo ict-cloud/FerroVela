@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::ui::{AuthType, ConfigEditor, Message};
+    use ferrovela::ui::{AuthType, ConfigEditor, Message};
     use std::fs;
     use tempfile::NamedTempFile;
 
