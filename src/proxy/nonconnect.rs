@@ -103,24 +103,7 @@ async fn handle_upstream(
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
-    // 1. Buffer Request Body
-    let (parts, body) = req.into_parts();
-    let body_bytes = match body.collect().await {
-        Ok(c) => c.to_bytes(),
-        Err(e) => {
-            error!("Failed to read request body: {}", e);
-            let mut resp = Response::new(full("Internal Server Error: Body Read Failed"));
-            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(resp);
-        }
-    };
-
-    let method = parts.method.clone();
-    let uri = parts.uri.clone();
-    let version = parts.version;
-    let headers = parts.headers.clone();
-
-    // 2. Connect
+    // 1. Connect
     let stream = match TcpStream::connect(addr).await {
         Ok(s) => s,
         Err(e) => {
@@ -139,6 +122,42 @@ async fn handle_upstream(
             error!("Upstream connection failed: {:?}", err);
         }
     });
+
+    // 2. Check Auth Requirement
+    if authenticator.is_none() {
+        // STREAMING MODE (Optimization)
+        let (mut parts, body) = req.into_parts();
+        parts.headers.remove("proxy-authorization");
+        let req = Request::from_parts(parts, body.boxed());
+
+        let resp = match sender.send_request(req).await {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to send request to upstream: {}", e);
+                let mut resp = Response::new(full(format!("Upstream Error: {}", e)));
+                *resp.status_mut() = StatusCode::BAD_GATEWAY;
+                return Ok(resp);
+            }
+        };
+        return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+    }
+
+    // 3. Buffer Request Body (Fallback for Auth Retries)
+    let (parts, body) = req.into_parts();
+    let body_bytes = match body.collect().await {
+        Ok(c) => c.to_bytes(),
+        Err(e) => {
+            error!("Failed to read request body: {}", e);
+            let mut resp = Response::new(full("Internal Server Error: Body Read Failed"));
+            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(resp);
+        }
+    };
+
+    let method = parts.method.clone();
+    let uri = parts.uri.clone();
+    let version = parts.version;
+    let headers = parts.headers.clone();
 
     let mut auth_session = authenticator.as_ref().map(|a| a.create_session());
     let mut challenge: Option<String> = None;
@@ -184,7 +203,7 @@ async fn handle_upstream(
             }
         }
 
-        let req = builder.body(full(body_bytes.clone())).unwrap();
+        let req = builder.body(full(body_bytes.clone()).boxed()).unwrap();
 
         // Send Request
         let resp = match sender.send_request(req).await {
