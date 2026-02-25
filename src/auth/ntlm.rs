@@ -15,7 +15,12 @@ pub struct NtlmAuthenticator {
 }
 
 impl NtlmAuthenticator {
-    pub fn new(username: String, password: String, domain: String, workstation: String) -> Self {
+    pub fn new(
+        username: String,
+        password: String,
+        domain: String,
+        workstation: String,
+    ) -> Self {
         Self {
             username,
             password,
@@ -91,12 +96,7 @@ impl AuthSession for NtlmSession {
 
                 let challenge_msg = match message {
                     Message::Challenge(c) => c,
-                    _ => {
-                        return Err(anyhow!(
-                            "Expected NTLM Challenge message, got {:?}",
-                            message
-                        ))
-                    }
+                    _ => return Err(anyhow!("Expected NTLM Challenge message, got {:?}", message)),
                 };
 
                 debug!("NTLM: Generating Type 3 (Authenticate) message");

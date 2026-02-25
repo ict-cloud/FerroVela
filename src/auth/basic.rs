@@ -1,7 +1,7 @@
 use anyhow::Result;
 use base64::prelude::*;
 
-use super::{AuthSession, UpstreamAuthenticator};
+use super::{UpstreamAuthenticator, AuthSession};
 
 pub struct BasicAuthenticator {
     username: String,
