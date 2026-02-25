@@ -1,6 +1,5 @@
-
 use crate::config::{Config, ProxyConfig};
-use crate::proxy::Proxy;
+use ferrovela::proxy::Proxy;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -81,7 +80,7 @@ async fn test_ssrf_protection() {
         if n > 0 {
             let data = String::from_utf8_lossy(&buf[..n]);
             if data.contains("Sensitive Data") {
-                 panic!("Vulnerability confirmed: Proxy allowed connection to localhost/internal network!");
+                panic!("Vulnerability confirmed: Proxy allowed connection to localhost/internal network!");
             }
         }
     }
