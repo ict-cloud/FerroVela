@@ -1,6 +1,33 @@
 # FerroVela - Agent Documentation
 
+## Goals, restrictions and output for agents
+
+This section describes the goals, the restrictions and the expected output for agents that work on this repository.
+
+### Goals
+
+- An agent is the solution architect for the requested tasks and outlines a description for it.
+- An agent is the software engineer for the requested feature and implements a solution for it.
+- An agent is the security engineer for the requested feature and takes measures to guarantee the security of the solution.
+- An agent is the testing engineer for the requested task and proposes appropriate tests for it.
+
+### Restrictions
+
+- Any request for a new feature must be based on the DEV branch if not otherwise specified.
+- The agent adheres to the standards described in this document.
+- If points are not clear an has to ask for clarification.
+- If not other specified any documentation should be in the README.md or in the folder "specification".
+- Any Rust code must comply with ```cargo fmt``` and ```cargo clippy -- -D warnings```
+
+### Output
+
+- The agent provides a detailed description of the solution.
+- The agent provides a detailed implementation of the solution.
+- The agent provides a detailed security analysis of the solution.
+- The agent provides a detailed testing plan for the solution.
+
 ## Project Overview
+
 FerroVela is a Rust-based local proxy server designed to route HTTP/HTTPS traffic for developer machines. It supports dynamic proxy configuration via PAC files, static upstream proxy chaining, and domain-based exceptions.
 
 ## Architecture
