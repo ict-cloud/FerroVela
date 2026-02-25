@@ -172,7 +172,7 @@ async fn connect_via_upstream(
                 }
                 Err(e) => {
                     error!("Auth session step error: {}", e);
-                    return Err(std::io::Error::new(std::io::ErrorKind::Other, "Auth error"));
+                    return Err(std::io::Error::other("Auth error"));
                 }
             }
         }
@@ -238,20 +238,14 @@ async fn connect_via_upstream(
                         // Break inner reading loop to send next request
                         break;
                     } else {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "407 without Proxy-Authenticate",
-                        ));
+                        return Err(std::io::Error::other("407 without Proxy-Authenticate"));
                     }
                 } else {
                     error!(
                         "Upstream proxy returned error: {}",
                         headers_str.lines().next().unwrap_or("")
                     );
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "Upstream refused connection",
-                    ));
+                    return Err(std::io::Error::other("Upstream refused connection"));
                 }
             }
 
