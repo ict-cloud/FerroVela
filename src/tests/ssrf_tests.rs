@@ -1,4 +1,4 @@
-use crate::config::{Config, ProxyConfig};
+use ferrovela::config::{Config, ProxyConfig};
 use ferrovela::proxy::Proxy;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
