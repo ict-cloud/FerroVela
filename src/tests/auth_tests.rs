@@ -1,6 +1,6 @@
 use crate::auth::basic::BasicAuthenticator;
-use crate::auth::mock_kerberos::MockKerberosAuthenticator;
 use crate::auth::kerberos::KerberosAuthenticator;
+use crate::auth::mock_kerberos::MockKerberosAuthenticator;
 use crate::auth::ntlm::NtlmAuthenticator;
 use crate::auth::UpstreamAuthenticator;
 use base64::Engine;
