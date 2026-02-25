@@ -1,4 +1,3 @@
-
 use crate::config::{Config, ProxyConfig};
 use crate::proxy::Proxy;
 use std::sync::Arc;
@@ -81,7 +80,7 @@ async fn test_ssrf_protection() {
         if n > 0 {
             let data = String::from_utf8_lossy(&buf[..n]);
             if data.contains("Sensitive Data") {
-                 panic!("Vulnerability confirmed: Proxy allowed connection to localhost/internal network!");
+                panic!("Vulnerability confirmed: Proxy allowed connection to localhost/internal network!");
             }
         }
     }

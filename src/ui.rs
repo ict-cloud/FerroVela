@@ -3,8 +3,10 @@ use crate::config::{
 };
 use crate::pac::PacEngine;
 use crate::proxy::{Proxy, ProxySignal};
-use iced::widget::{button, column, pick_list, row, scrollable, text, text_input};
-use iced::{window, Alignment, Color, Element, Subscription, Task};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_input, toggler, Space,
+};
+use iced::{window, Alignment, Element, Length, Subscription, Task, Theme};
 use log::{error, info};
 use std::fmt;
 use std::io::{Read, Seek, SeekFrom};
@@ -17,14 +19,13 @@ use tokio::task::AbortHandle;
 pub static IPC_RECEIVER: OnceLock<Mutex<Option<mpsc::Receiver<ProxySignal>>>> = OnceLock::new();
 
 pub fn run_ui(config_path: String) -> iced::Result {
-    iced::application(
+    iced::daemon(
         move || ConfigEditor::new_args(config_path.clone()),
         ConfigEditor::update,
         ConfigEditor::view,
     )
-    .title("Ferrovela Configuration")
+    .theme(|_: &ConfigEditor, _: window::Id| Theme::Light)
     .subscription(ConfigEditor::subscription)
-    .exit_on_close_request(false)
     .run()
 }
 
@@ -52,10 +53,10 @@ impl fmt::Display for AuthType {
             f,
             "{}",
             match self {
-                AuthType::None => "none",
-                AuthType::Basic => "basic",
-                AuthType::Ntlm => "ntlm",
-                AuthType::Kerberos => "kerberos",
+                AuthType::None => "None",
+                AuthType::Basic => "Basic",
+                AuthType::Ntlm => "NTLM",
+                AuthType::Kerberos => "Kerberos",
             }
         )
     }
@@ -79,8 +80,18 @@ pub enum ServiceStatus {
     Running,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tab {
+    #[default]
+    Proxy,
+    Upstream,
+    Exceptions,
+}
+
 pub struct ConfigEditor {
     pub path: String,
+    // Tabs
+    pub active_tab: Tab,
     // Form fields
     pub proxy_port: String,
     pub pac_file: String,
@@ -101,14 +112,16 @@ pub struct ConfigEditor {
     // Log view
     pub show_logs: bool,
     pub log_content: String,
-    // State
-    pub window_id: Option<window::Id>,
+    // Window Management
+    pub main_window_id: Option<window::Id>,
+    pub log_window_id: Option<window::Id>,
     // Signal sender for Proxy
     pub signal_sender: mpsc::Sender<ProxySignal>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    TabSelected(Tab),
     ProxyPortChanged(String),
     PacFileChanged(String),
     UpstreamAuthTypeChanged(AuthType),
@@ -118,9 +131,9 @@ pub enum Message {
     UpstreamWorkstationChanged(String),
     UpstreamProxyUrlChanged(String),
     ExceptionsHostsChanged(String),
-    SavePressed,
-    ToggleService,
-    ToggleLogs,
+    ToggleService(bool),
+    OpenLogs,
+    LogsOpened(window::Id),
     Tick,
     External,
     WindowCloseRequested(window::Id),
@@ -131,16 +144,13 @@ impl ConfigEditor {
     pub fn new_args(path: String) -> (Self, Task<Message>) {
         let config = load_config(&path).unwrap_or_default();
 
-        // Initialize IPC channel
         let (tx, rx) = mpsc::channel(32);
-        // We only set the global receiver once. If it's already set (re-run?), we might lose the new rx?
-        // But application::run usually runs once per process.
-        // If we restart UI? application::run blocks.
         let _ = IPC_RECEIVER.set(Mutex::new(Some(rx)));
 
         (
             Self {
                 path,
+                active_tab: Tab::Proxy,
                 proxy_port: config.proxy.port.to_string(),
                 pac_file: config.proxy.pac_file.unwrap_or_default(),
                 upstream_auth_type: config
@@ -184,7 +194,8 @@ impl ConfigEditor {
                 proxy_handle: None,
                 show_logs: false,
                 log_content: String::new(),
-                window_id: None,
+                main_window_id: None,
+                log_window_id: None,
                 signal_sender: tx,
             },
             Task::none(),
@@ -206,7 +217,7 @@ impl ConfigEditor {
             None
         } else {
             Some(UpstreamConfig {
-                auth_type: self.upstream_auth_type.to_string(),
+                auth_type: self.upstream_auth_type.to_string().to_lowercase(),
                 username: if self.upstream_username.trim().is_empty() {
                     None
                 } else {
@@ -283,6 +294,9 @@ impl ConfigEditor {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::TabSelected(tab) => {
+                self.active_tab = tab;
+            }
             Message::ProxyPortChanged(value) => {
                 self.proxy_port = value;
                 self.save_current_config();
@@ -319,11 +333,8 @@ impl ConfigEditor {
                 self.exceptions_hosts = value;
                 self.save_current_config();
             }
-            Message::SavePressed => {
-                self.save_current_config();
-            }
-            Message::ToggleService => match self.service_status {
-                ServiceStatus::Stopped => {
+            Message::ToggleService(is_running) => {
+                if is_running {
                     let config = Arc::new(self.build_config());
                     let pac_path = config.proxy.pac_file.clone();
                     let sender = self.signal_sender.clone();
@@ -351,171 +362,263 @@ impl ConfigEditor {
                     self.proxy_handle = Some(handle.abort_handle());
                     self.service_status = ServiceStatus::Running;
                     self.status = "Service Started".to_string();
-                }
-                ServiceStatus::Running => {
+                } else {
                     if let Some(handle) = self.proxy_handle.take() {
                         handle.abort();
                     }
                     self.service_status = ServiceStatus::Stopped;
                     self.status = "Service Stopped".to_string();
                 }
-            },
-            Message::ToggleLogs => {
-                self.show_logs = !self.show_logs;
-                if self.show_logs {
+            }
+            Message::OpenLogs => {
+                if self.log_window_id.is_none() {
+                    let (id, open_task) = window::open(window::Settings {
+                        size: (800.0, 600.0).into(),
+                        ..Default::default()
+                    });
+                    self.log_content = String::new();
                     self.load_logs();
+                    self.show_logs = true;
+                    return open_task.map(move |_| Message::LogsOpened(id));
+                } else {
+                    if let Some(id) = self.log_window_id {
+                        return window::gain_focus(id);
+                    }
                 }
             }
+            Message::LogsOpened(id) => {
+                self.log_window_id = Some(id);
+            }
             Message::Tick => {
-                if self.show_logs {
+                if self.show_logs || self.log_window_id.is_some() {
                     self.load_logs();
                 }
             }
             Message::External => {
-                if let Some(id) = self.window_id {
-                    // Minimize(false) usually restores it
-                    return window::minimize(id, false)
-                        .chain(window::gain_focus(id));
+                if let Some(id) = self.main_window_id {
+                    return window::minimize(id, false).chain(window::gain_focus(id));
                 }
             }
             Message::WindowCloseRequested(id) => {
-                if self.service_status == ServiceStatus::Running {
-                    return window::minimize(id, true);
-                } else {
+                if Some(id) == self.log_window_id {
+                    self.log_window_id = None;
+                    self.show_logs = false;
                     return window::close(id);
+                } else {
+                    if self.service_status == ServiceStatus::Running {
+                        return window::minimize(id, true);
+                    } else {
+                        return window::close(id);
+                    }
                 }
             }
             Message::IdCaptured(id) => {
-                self.window_id = Some(id);
+                if self.log_window_id != Some(id) && self.main_window_id.is_none() {
+                    self.main_window_id = Some(id);
+                }
             }
         }
         Task::none()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let tick = if self.show_logs {
+        let tick = if self.show_logs || self.log_window_id.is_some() {
             iced::time::every(Duration::from_millis(500)).map(|_| Message::Tick)
         } else {
             Subscription::none()
         };
 
-        // IPC Subscription
         let ipc = Subscription::run(ipc_stream);
 
-        let events = iced::event::listen_with(|event, _status, id| {
-             match event {
-                 iced::Event::Window(window::Event::CloseRequested) => Some(Message::WindowCloseRequested(id)),
-                 iced::Event::Window(_) => Some(Message::IdCaptured(id)),
-                 _ => None
-             }
+        let events = iced::event::listen_with(|event, _status, id| match event {
+            iced::Event::Window(window::Event::CloseRequested) => {
+                Some(Message::WindowCloseRequested(id))
+            }
+            iced::Event::Window(_) => Some(Message::IdCaptured(id)),
+            _ => None,
         });
 
         Subscription::batch(vec![tick, ipc, events])
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
-        if self.show_logs {
-            return column![
-                button("Back").on_press(Message::ToggleLogs),
-                scrollable(text(&self.log_content))
-            ]
-            .padding(20)
-            .spacing(10)
-            .into();
+    pub fn view(&self, window_id: window::Id) -> Element<'_, Message> {
+        if Some(window_id) == self.log_window_id {
+            return self.view_logs();
         }
 
-        let status_color = match self.service_status {
-            ServiceStatus::Running => Color::from_rgb(0.0, 0.8, 0.0),
-            ServiceStatus::Stopped => Color::from_rgb(0.5, 0.5, 0.5),
+        let sidebar = column![
+            sidebar_button("Proxy", Tab::Proxy, self.active_tab),
+            sidebar_button("Upstream", Tab::Upstream, self.active_tab),
+            sidebar_button("Exceptions", Tab::Exceptions, self.active_tab),
+        ]
+        .spacing(5)
+        .padding(10)
+        .width(Length::Fixed(150.0));
+
+        let content = match self.active_tab {
+            Tab::Proxy => self.view_proxy_config(),
+            Tab::Upstream => self.view_upstream_config(),
+            Tab::Exceptions => self.view_exceptions_config(),
         };
 
         let status_text = match self.service_status {
             ServiceStatus::Running => "Running",
             ServiceStatus::Stopped => "Stopped",
         };
-        let toggle_text = match self.service_status {
-            ServiceStatus::Running => "Stop",
-            ServiceStatus::Stopped => "Start",
-        };
 
         let service_control = row![
-            text("●").size(20).color(status_color),
             text(status_text),
-            button(toggle_text).on_press(Message::ToggleService),
-            button("Show Logs").on_press(Message::ToggleLogs),
+            Space::new().width(10),
+            toggler(self.service_status == ServiceStatus::Running)
+                .on_toggle(Message::ToggleService)
+                .width(Length::Shrink),
+            Space::new().width(20),
+            button("Show Logs").on_press(Message::OpenLogs),
         ]
-        .spacing(20)
         .align_y(Alignment::Center);
 
-        let content = column![
-            text("Service Control").size(20),
-            service_control,
-            text("Proxy Configuration").size(20),
-            row![
-                text("Port:"),
-                text_input("3128", &self.proxy_port).on_input(Message::ProxyPortChanged)
-            ]
-            .spacing(10),
-            row![
-                text("PAC File:"),
-                text_input("Path to PAC file", &self.pac_file).on_input(Message::PacFileChanged)
-            ]
-            .spacing(10),
-            text("Upstream Configuration").size(20),
-            row![
-                text("Auth Type:"),
-                pick_list(
-                    &AuthType::ALL[..],
-                    Some(self.upstream_auth_type),
-                    Message::UpstreamAuthTypeChanged
-                )
-            ]
-            .spacing(10),
-            row![
-                text("Username:"),
-                text_input("Username", &self.upstream_username)
-                    .on_input(Message::UpstreamUsernameChanged)
-            ]
-            .spacing(10),
-            row![
-                text("Password:"),
-                text_input("Password", &self.upstream_password)
-                    .on_input(Message::UpstreamPasswordChanged)
-                    .secure(true)
-            ]
-            .spacing(10),
-            row![
-                text("Domain (NTLM):"),
-                text_input("Domain", &self.upstream_domain)
-                    .on_input(Message::UpstreamDomainChanged)
-            ]
-            .spacing(10),
-            row![
-                text("Workstation (NTLM):"),
-                text_input("Workstation", &self.upstream_workstation)
-                    .on_input(Message::UpstreamWorkstationChanged)
-            ]
-            .spacing(10),
-            row![
-                text("Proxy URL:"),
-                text_input("http://upstream:port", &self.upstream_proxy_url)
-                    .on_input(Message::UpstreamProxyUrlChanged)
-            ]
-            .spacing(10),
-            text("Exceptions").size(20),
-            row![
-                text("Hosts (comma separated):"),
-                text_input("localhost, 127.0.0.1", &self.exceptions_hosts)
-                    .on_input(Message::ExceptionsHostsChanged)
-            ]
-            .spacing(10),
-            button("Save").on_press(Message::SavePressed),
-            text(&self.status)
-        ]
-        .spacing(20)
-        .padding(20);
+        let main_layout = row![
+            sidebar,
+            container(column![service_control, Space::new().height(20), content].spacing(10))
+                .width(Length::Fill)
+                .padding(20)
+                .style(rounded_box)
+        ];
 
-        content.into()
+        main_layout.into()
+    }
+
+    fn view_logs(&self) -> Element<'_, Message> {
+        column![scrollable(
+            text(&self.log_content).font(iced::font::Font::MONOSPACE)
+        )]
+        .padding(10)
+        .into()
+    }
+
+    fn view_proxy_config(&self) -> Element<'_, Message> {
+        column![
+            text("Proxy Settings").size(24),
+            Space::new().height(10),
+            group_box(
+                column![
+                    field_row(
+                        "Port:",
+                        text_input("3128", &self.proxy_port).on_input(Message::ProxyPortChanged)
+                    ),
+                    field_row(
+                        "PAC File:",
+                        text_input("Path to PAC file", &self.pac_file)
+                            .on_input(Message::PacFileChanged)
+                    )
+                ]
+                .spacing(10)
+            )
+        ]
+        .spacing(10)
+        .into()
+    }
+
+    fn view_upstream_config(&self) -> Element<'_, Message> {
+        column![
+            text("Upstream Settings").size(24),
+            Space::new().height(10),
+            group_box(
+                column![
+                    field_row(
+                        "Auth Type:",
+                        pick_list(
+                            &AuthType::ALL[..],
+                            Some(self.upstream_auth_type),
+                            Message::UpstreamAuthTypeChanged
+                        )
+                    ),
+                    field_row(
+                        "Username:",
+                        text_input("Username", &self.upstream_username)
+                            .on_input(Message::UpstreamUsernameChanged)
+                    ),
+                    field_row(
+                        "Password:",
+                        text_input("Password", &self.upstream_password)
+                            .on_input(Message::UpstreamPasswordChanged)
+                            .secure(true)
+                    ),
+                    field_row(
+                        "Domain:",
+                        text_input("Domain (NTLM)", &self.upstream_domain)
+                            .on_input(Message::UpstreamDomainChanged)
+                    ),
+                    field_row(
+                        "Workstation:",
+                        text_input("Workstation (NTLM)", &self.upstream_workstation)
+                            .on_input(Message::UpstreamWorkstationChanged)
+                    ),
+                    field_row(
+                        "Proxy URL:",
+                        text_input("http://upstream:port", &self.upstream_proxy_url)
+                            .on_input(Message::UpstreamProxyUrlChanged)
+                    ),
+                ]
+                .spacing(10)
+            )
+        ]
+        .into()
+    }
+
+    fn view_exceptions_config(&self) -> Element<'_, Message> {
+        column![
+            text("Exceptions").size(24),
+            Space::new().height(10),
+            group_box(
+                column![
+                    text("Hosts to bypass proxy (comma separated):").size(14),
+                    text_input("localhost, 127.0.0.1", &self.exceptions_hosts)
+                        .on_input(Message::ExceptionsHostsChanged)
+                ]
+                .spacing(5)
+            )
+        ]
+        .into()
+    }
+}
+
+// Helpers
+fn sidebar_button(label: &str, tab: Tab, active_tab: Tab) -> Element<'_, Message> {
+    let is_active = tab == active_tab;
+
+    button(text(label).width(Length::Fill).align_x(Alignment::Center))
+        .width(Length::Fill)
+        .padding(10)
+        .on_press(Message::TabSelected(tab))
+        .style(if is_active {
+            iced::widget::button::primary
+        } else {
+            iced::widget::button::secondary
+        })
+        .into()
+}
+
+fn group_box<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    container(content).padding(15).style(rounded_box).into()
+}
+
+fn field_row<'a>(label: &'a str, input: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    column![text(label).size(14), input.into()]
+        .spacing(5)
+        .into()
+}
+
+fn rounded_box(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    container::Style {
+        background: Some(palette.background.weak.color.into()),
+        border: iced::Border {
+            radius: 10.0.into(),
+            width: 1.0,
+            color: palette.background.strong.color,
+        },
+        ..Default::default()
     }
 }
 
@@ -526,11 +629,11 @@ fn ipc_stream() -> impl iced::futures::Stream<Item = Message> {
             // Lock the mutex. This is async mutex.
             let mut guard = guard_lock.lock().await;
             if let Some(rx) = guard.as_mut() {
-                 if let Some(cmd) = rx.recv().await {
-                     match cmd {
+                if let Some(cmd) = rx.recv().await {
+                    match cmd {
                         ProxySignal::Show => return Some((Message::External, ())),
-                     }
-                 }
+                    }
+                }
             }
         }
         // If receiver missing or closed, wait forever
