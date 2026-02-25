@@ -7,9 +7,9 @@ pub fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 pub fn parse_content_length(headers: &str) -> usize {
     for line in headers.lines() {
         if line.to_lowercase().starts_with("content-length:") {
-             if let Some(val) = line.split(':').nth(1) {
-                 return val.trim().parse().unwrap_or(0);
-             }
+            if let Some(val) = line.split(':').nth(1) {
+                return val.trim().parse().unwrap_or(0);
+            }
         }
     }
     0
@@ -20,10 +20,10 @@ pub fn find_header_value(headers: &str, key: &str) -> Option<String> {
     for line in headers.lines() {
         let line_lower = line.to_lowercase();
         if line_lower.starts_with(&format!("{}:", key_lower)) {
-             // We need original case value, so we find split index in original line
-             if let Some(idx) = line.find(':') {
-                 return Some(line[idx+1..].trim().to_string());
-             }
+            // We need original case value, so we find split index in original line
+            if let Some(idx) = line.find(':') {
+                return Some(line[idx + 1..].trim().to_string());
+            }
         }
     }
     None
@@ -56,8 +56,14 @@ mod tests {
     #[test]
     fn test_find_header_value() {
         let headers = "Proxy-Authenticate: Basic realm=\"proxy\"\r\nConnection: keep-alive\r\n";
-        assert_eq!(find_header_value(headers, "Proxy-Authenticate"), Some("Basic realm=\"proxy\"".to_string()));
-        assert_eq!(find_header_value(headers, "connection"), Some("keep-alive".to_string()));
+        assert_eq!(
+            find_header_value(headers, "Proxy-Authenticate"),
+            Some("Basic realm=\"proxy\"".to_string())
+        );
+        assert_eq!(
+            find_header_value(headers, "connection"),
+            Some("keep-alive".to_string())
+        );
         assert_eq!(find_header_value(headers, "foo"), None);
     }
 }

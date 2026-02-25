@@ -2,21 +2,11 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Default, Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub proxy: ProxyConfig,
     pub upstream: Option<UpstreamConfig>,
     pub exceptions: Option<ExceptionsConfig>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            proxy: ProxyConfig::default(),
-            upstream: None,
-            exceptions: None,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -72,7 +62,9 @@ pub struct ExceptionsConfig {
 
 impl ExceptionsConfig {
     pub fn matches(&self, host: &str) -> bool {
-        self.hosts.iter().any(|pattern| Self::host_matches_pattern(pattern, host))
+        self.hosts
+            .iter()
+            .any(|pattern| Self::host_matches_pattern(pattern, host))
     }
 
     fn host_matches_pattern(pattern: &str, host: &str) -> bool {
@@ -131,10 +123,7 @@ mod tests {
     #[test]
     fn test_exceptions_multiple_patterns() {
         let exceptions = ExceptionsConfig {
-            hosts: vec![
-                "exact.com".to_string(),
-                "*.wild.com".to_string(),
-            ],
+            hosts: vec!["exact.com".to_string(), "*.wild.com".to_string()],
         };
         assert!(exceptions.matches("exact.com"));
         assert!(!exceptions.matches("sub.exact.com"));
@@ -147,9 +136,7 @@ mod tests {
 
     #[test]
     fn test_exceptions_empty() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec![],
-        };
+        let exceptions = ExceptionsConfig { hosts: vec![] };
         assert!(!exceptions.matches("example.com"));
     }
 }

@@ -88,7 +88,7 @@ impl PacEngine {
                     1,
                     NativeFunction::from_fn_ptr(|_, args, _| {
                         let host = args
-                            .get(0)
+                            .first()
                             .and_then(|v| v.as_string())
                             .map(|s| s.to_std_string_escaped())
                             .unwrap_or_default();
@@ -109,7 +109,7 @@ impl PacEngine {
                     2,
                     NativeFunction::from_fn_ptr(|_, args, _| {
                         let str_val = args
-                            .get(0)
+                            .first()
                             .and_then(|v| v.as_string())
                             .map(|s| s.to_std_string_escaped())
                             .unwrap_or_default();
@@ -184,6 +184,55 @@ impl PacEngine {
         match rx.await {
             Ok(res) => res,
             Err(_) => Err(anyhow::anyhow!("PAC thread dropped channel")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::glob_match;
+
+    #[test]
+    fn test_glob_match_cases() {
+        let cases = vec![
+            // Exact match
+            ("abc", "abc", true),
+            ("abc", "def", false),
+
+            // Wildcard (*)
+            ("*", "anything", true),
+            ("*", "", true),
+            ("abc*", "abcdef", true),
+            ("*def", "abcdef", true),
+            ("ab*ef", "abcdef", true),
+            ("a*c", "abc", true),
+            ("a*c", "abbc", true),
+            ("*bc*", "abcdef", true),
+
+            // Question mark (?)
+            ("?", "a", true),
+            ("?", "", false),
+            ("a?c", "abc", true),
+            ("a?c", "ac", false),
+            ("a?c", "abbc", false),
+
+            // Mixed
+            ("?b*", "abc", true),
+            ("*b?", "abc", true),
+
+            // Edge cases
+            ("", "", true),
+            ("", "a", false),
+            ("a", "", false),
+            ("*******", "a", true),
+        ];
+
+        for (pattern, text, expected) in cases {
+            assert_eq!(
+                glob_match(pattern, text),
+                expected,
+                "Pattern: '{}', Text: '{}'", pattern, text
+            );
         }
     }
 }
