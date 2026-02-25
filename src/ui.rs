@@ -147,6 +147,11 @@ impl ConfigEditor {
         let (tx, rx) = mpsc::channel(32);
         let _ = IPC_RECEIVER.set(Mutex::new(Some(rx)));
 
+        let (main_window_id, open_task) = window::open(window::Settings {
+            size: (800.0, 600.0).into(),
+            ..Default::default()
+        });
+
         (
             Self {
                 path,
@@ -194,11 +199,11 @@ impl ConfigEditor {
                 proxy_handle: None,
                 show_logs: false,
                 log_content: String::new(),
-                main_window_id: None,
+                main_window_id: Some(main_window_id),
                 log_window_id: None,
                 signal_sender: tx,
             },
-            Task::none(),
+            open_task.map(Message::IdCaptured),
         )
     }
 
