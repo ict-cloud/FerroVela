@@ -103,24 +103,7 @@ async fn handle_upstream(
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
-    // 1. Buffer Request Body
-    let (parts, body) = req.into_parts();
-    let body_bytes = match body.collect().await {
-        Ok(c) => c.to_bytes(),
-        Err(e) => {
-            error!("Failed to read request body: {}", e);
-            let mut resp = Response::new(full("Internal Server Error: Body Read Failed"));
-            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return Ok(resp);
-        }
-    };
-
-    let method = parts.method.clone();
-    let uri = parts.uri.clone();
-    let version = parts.version;
-    let headers = parts.headers.clone();
-
-    // 2. Connect
+    // 1. Connect
     let stream = match TcpStream::connect(addr).await {
         Ok(s) => s,
         Err(e) => {
@@ -139,6 +122,42 @@ async fn handle_upstream(
             error!("Upstream connection failed: {:?}", err);
         }
     });
+
+    // 2. Check Auth Requirement
+    if authenticator.is_none() {
+        // STREAMING MODE (Optimization)
+        let (mut parts, body) = req.into_parts();
+        parts.headers.remove("proxy-authorization");
+        let req = Request::from_parts(parts, body.boxed());
+
+        let resp = match sender.send_request(req).await {
+            Ok(r) => r,
+            Err(e) => {
+                error!("Failed to send request to upstream: {}", e);
+                let mut resp = Response::new(full(format!("Upstream Error: {}", e)));
+                *resp.status_mut() = StatusCode::BAD_GATEWAY;
+                return Ok(resp);
+            }
+        };
+        return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+    }
+
+    // 3. Buffer Request Body (Fallback for Auth Retries)
+    let (parts, body) = req.into_parts();
+    let body_bytes = match body.collect().await {
+        Ok(c) => c.to_bytes(),
+        Err(e) => {
+            error!("Failed to read request body: {}", e);
+            let mut resp = Response::new(full("Internal Server Error: Body Read Failed"));
+            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(resp);
+        }
+    };
+
+    let method = parts.method.clone();
+    let uri = parts.uri.clone();
+    let version = parts.version;
+    let headers = parts.headers.clone();
 
     let mut auth_session = authenticator.as_ref().map(|a| a.create_session());
     let mut challenge: Option<String> = None;
@@ -168,23 +187,23 @@ async fn handle_upstream(
 
         // Add Proxy-Authorization
         if let Some(session) = &mut auth_session {
-             match session.step(challenge.as_deref()) {
-                 Ok(Some(h)) => {
-                     if let Ok(val) = HeaderValue::from_str(&h) {
-                         builder = builder.header(hyper::header::PROXY_AUTHORIZATION, val);
-                     }
-                 }
-                 Ok(None) => {},
-                 Err(e) => {
-                     error!("Auth error: {}", e);
-                     let mut resp = Response::new(full("Internal Server Error: Auth Failed"));
-                     *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                     return Ok(resp);
-                 }
-             }
+            match session.step(challenge.as_deref()) {
+                Ok(Some(h)) => {
+                    if let Ok(val) = HeaderValue::from_str(&h) {
+                        builder = builder.header(hyper::header::PROXY_AUTHORIZATION, val);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    error!("Auth error: {}", e);
+                    let mut resp = Response::new(full("Internal Server Error: Auth Failed"));
+                    *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    return Ok(resp);
+                }
+            }
         }
 
-        let req = builder.body(full(body_bytes.clone())).unwrap();
+        let req = builder.body(full(body_bytes.clone()).boxed()).unwrap();
 
         // Send Request
         let resp = match sender.send_request(req).await {
@@ -199,33 +218,34 @@ async fn handle_upstream(
             }
         };
 
-        if resp.status() == StatusCode::PROXY_AUTHENTICATION_REQUIRED { // 407
-             if auth_session.is_none() {
-                 return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
-             }
+        if resp.status() == StatusCode::PROXY_AUTHENTICATION_REQUIRED {
+            // 407
+            if auth_session.is_none() {
+                return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+            }
 
-             // Extract Challenge
-             if let Some(val) = resp.headers().get("proxy-authenticate") {
-                 if let Ok(s) = val.to_str() {
-                     challenge = Some(s.to_string());
-                 } else {
-                     challenge = None;
-                 }
-             } else {
-                 challenge = None;
-             }
+            // Extract Challenge
+            if let Some(val) = resp.headers().get("proxy-authenticate") {
+                if let Ok(s) = val.to_str() {
+                    challenge = Some(s.to_string());
+                } else {
+                    challenge = None;
+                }
+            } else {
+                challenge = None;
+            }
 
-             // Check if we should pass through 407 (e.g. auth failed after attempts)
-             // If we got 407 and challenge is None, it's weird, but maybe pass through.
-             if challenge.is_none() {
-                  return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
-             }
+            // Check if we should pass through 407 (e.g. auth failed after attempts)
+            // If we got 407 and challenge is None, it's weird, but maybe pass through.
+            if challenge.is_none() {
+                return Ok(resp.map(|b| b.map_err(|e| e).boxed()));
+            }
 
-             // Drain body so we can reuse connection
-             let _ = resp.collect().await; // Ignore errors during drain
+            // Drain body so we can reuse connection
+            let _ = resp.collect().await; // Ignore errors during drain
 
-             // Continue loop
-             continue;
+            // Continue loop
+            continue;
         } else {
             // Success or other error
             return Ok(resp.map(|b| b.map_err(|e| e).boxed()));

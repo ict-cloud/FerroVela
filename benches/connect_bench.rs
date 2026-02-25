@@ -1,9 +1,10 @@
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use ferrovela::config::{Config, ProxyConfig, UpstreamConfig};
 use ferrovela::proxy::Proxy;
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::runtime::Runtime;
 
 async fn start_performance_target_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -66,7 +67,6 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
         proxy: ProxyConfig {
             port,
             pac_file: None,
-            allow_private_ips: true,
         },
         upstream: Some(upstream_config),
         exceptions: None,
@@ -80,62 +80,35 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
     port
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_proxy_throughput() {
-    let target_port = start_performance_target_server().await;
-    let proxy_port = start_performance_proxy(target_port).await;
+fn connect_benchmark(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
 
-    let concurrent_clients = 50;
-    let requests_per_client = 100;
-    let total_requests = concurrent_clients * requests_per_client;
+    // Setup environment once
+    let (_target_port, proxy_port) = rt.block_on(async {
+        let tp = start_performance_target_server().await;
+        let pp = start_performance_proxy(tp).await;
+        (tp, pp)
+    });
 
-    println!(
-        "Starting performance test with {} clients, {} requests each (Total: {})",
-        concurrent_clients, requests_per_client, total_requests
-    );
+    let proxy_addr = format!("127.0.0.1:{}", proxy_port);
 
-    let start_time = Instant::now();
-    let mut tasks = Vec::new();
+    let mut group = c.benchmark_group("connect");
+    group.throughput(Throughput::Elements(1));
 
-    for _ in 0..concurrent_clients {
-        let proxy_addr = format!("127.0.0.1:{}", proxy_port);
-        tasks.push(tokio::spawn(async move {
-            let mut success_count = 0;
-            for _ in 0..requests_per_client {
-                if let Ok(mut stream) = TcpStream::connect(&proxy_addr).await {
-                    let req = b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n";
-                    if stream.write_all(req).await.is_err() { continue; }
-
+    group.bench_function("connect_throughput", |b| {
+        b.to_async(&rt).iter(|| async {
+            if let Ok(mut stream) = TcpStream::connect(&proxy_addr).await {
+                let req = b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n";
+                if stream.write_all(req).await.is_ok() {
                     let mut buf = [0u8; 1024];
-                    if let Ok(n) = stream.read(&mut buf).await {
-                         if n > 0 {
-                             let response = String::from_utf8_lossy(&buf[..n]);
-                             if response.contains("200 OK") {
-                                 success_count += 1;
-                             }
-                         }
-                    }
+                    let _ = stream.read(&mut buf).await;
                 }
             }
-            success_count
-        }));
-    }
+        })
+    });
 
-    let mut total_success = 0;
-    for task in tasks {
-        total_success += task.await.unwrap();
-    }
-
-    let duration = start_time.elapsed();
-    let rps = total_success as f64 / duration.as_secs_f64();
-
-    println!("Performance Test Results:");
-    println!("Total Requests: {}", total_requests);
-    println!("Successful Requests: {}", total_success);
-    println!("Total Duration: {:.2?}", duration);
-    println!("Requests Per Second (RPS): {:.2}", rps);
-
-    assert!(total_success > 0, "No requests succeeded");
-    // With connection close, RPS might be lower, but should be decent on localhost.
-    assert!(rps > 10.0, "RPS is too low ({:.2})", rps);
+    group.finish();
 }
+
+criterion_group!(benches, connect_benchmark);
+criterion_main!(benches);

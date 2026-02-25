@@ -270,7 +270,7 @@ impl ConfigEditor {
         if let Ok(mut file) = std::fs::File::open("service.log") {
             if let Ok(metadata) = file.metadata() {
                 let len = metadata.len();
-                let offset = if len > 10000 { len - 10000 } else { 0 };
+                let offset = len.saturating_sub(10000);
                 if file.seek(SeekFrom::Start(offset)).is_ok() {
                     let mut buffer = String::new();
                     if file.read_to_string(&mut buffer).is_ok() {
@@ -374,8 +374,7 @@ impl ConfigEditor {
             Message::External => {
                 if let Some(id) = self.window_id {
                     // Minimize(false) usually restores it
-                    return window::minimize(id, false)
-                        .chain(window::gain_focus(id));
+                    return window::minimize(id, false).chain(window::gain_focus(id));
                 }
             }
             Message::WindowCloseRequested(id) => {
@@ -402,12 +401,12 @@ impl ConfigEditor {
         // IPC Subscription
         let ipc = Subscription::run(ipc_stream);
 
-        let events = iced::event::listen_with(|event, _status, id| {
-             match event {
-                 iced::Event::Window(window::Event::CloseRequested) => Some(Message::WindowCloseRequested(id)),
-                 iced::Event::Window(_) => Some(Message::IdCaptured(id)),
-                 _ => None
-             }
+        let events = iced::event::listen_with(|event, _status, id| match event {
+            iced::Event::Window(window::Event::CloseRequested) => {
+                Some(Message::WindowCloseRequested(id))
+            }
+            iced::Event::Window(_) => Some(Message::IdCaptured(id)),
+            _ => None,
         });
 
         Subscription::batch(vec![tick, ipc, events])
@@ -526,11 +525,11 @@ fn ipc_stream() -> impl iced::futures::Stream<Item = Message> {
             // Lock the mutex. This is async mutex.
             let mut guard = guard_lock.lock().await;
             if let Some(rx) = guard.as_mut() {
-                 if let Some(cmd) = rx.recv().await {
-                     match cmd {
+                if let Some(cmd) = rx.recv().await {
+                    match cmd {
                         ProxySignal::Show => return Some((Message::External, ())),
-                     }
-                 }
+                    }
+                }
             }
         }
         // If receiver missing or closed, wait forever
