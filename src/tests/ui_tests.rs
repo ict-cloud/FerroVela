@@ -42,9 +42,6 @@ mod tests {
         let _ = editor.update(Message::ProxyPortChanged("1234".to_string()));
         let _ = editor.update(Message::UpstreamUsernameChanged("testuser".to_string()));
 
-        // Save
-        let _ = editor.update(Message::SavePressed);
-
         // Verify file content
         let content = fs::read_to_string(&path).expect("Failed to read config file");
         assert!(content.contains("port = 1234"));
