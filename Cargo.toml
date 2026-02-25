@@ -28,31 +28,6 @@ iced = { version = "0.14", features = ["tokio"] }
 libgssapi = { version = "0.7", default-features = false }
 ntlmclient = "0.2.0"
 tokio-stream = "0.1.18"
-memchr = "2.8.0"
 
 [dev-dependencies]
 tempfile = "3.25.0"
-criterion = { version = "0.5", features = ["async_tokio"] }
-
-[[bench]]
-name = "connect_bench"
-harness = false
-
-[[bench]]
-name = "subsequence_bench"
-harness = false
-path = "benches/subsequence_bench.rs"
-
-[lib]
-name = "ferrovela"
-path = "src/lib.rs"
-
-[[bin]]
-name = "ferrovela"
-path = "src/main.rs"
-
-[profile.release]
-opt-level = "s" # or "z"
-codegen-units = 1
-lto = "thin" #alternatives "fat" or "false"
-strip = "debuginfo"
