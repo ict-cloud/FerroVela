@@ -286,7 +286,7 @@ impl ConfigEditor {
         if let Ok(mut file) = std::fs::File::open("service.log") {
             if let Ok(metadata) = file.metadata() {
                 let len = metadata.len();
-                let offset = if len > 10000 { len - 10000 } else { 0 };
+                let offset = len.saturating_sub(10000);
                 if file.seek(SeekFrom::Start(offset)).is_ok() {
                     let mut buffer = String::new();
                     if file.read_to_string(&mut buffer).is_ok() {

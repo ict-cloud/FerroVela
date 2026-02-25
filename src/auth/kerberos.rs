@@ -39,14 +39,12 @@ impl AuthSession for KerberosSession {
         let input_token = if let Some(c) = challenge {
             if c.trim().is_empty() {
                 None
-            } else if c.starts_with("Negotiate ") {
-                Some(BASE64_STANDARD.decode(c[10..].trim())?)
+            } else if let Some(stripped) = c.strip_prefix("Negotiate ") {
+                Some(BASE64_STANDARD.decode(stripped.trim())?)
+            } else if c.trim() == "Negotiate" {
+                None
             } else {
-                if c.trim() == "Negotiate" {
-                    None
-                } else {
-                    return Err(anyhow::anyhow!("Invalid challenge format: {}", c));
-                }
+                return Err(anyhow::anyhow!("Invalid challenge format: {}", c));
             }
         } else {
             None
