@@ -4,7 +4,7 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 
 ## Features
 
-- **PAC File Support**: Seamlessly reads and interprets `.pac` files for dynamic proxy configuration.
+- **PAC File Support**: Seamlessly reads and interprets `.pac` files for dynamic proxy configuration. PAC files are always fetched using a DIRECT connection (no proxy). All standard PAC helper functions are supported, including `isPlainHostName`, `dnsDomainIs`, `localHostOrDomainIs`, `isResolvable`, `isInNet`, `dnsDomainLevels`, `shExpMatch`, and more.
 -   **Protocol Support**: Routes both HTTP (GET, POST, etc.) and HTTPS (CONNECT) traffic efficiently.
 - **Smart Exceptions**: configure exceptions based on domains, glob patterns, or IP addresses.
 - **Corporate Authentication**: Supports Basic, NTLM, and Kerberos authentication for upstream proxies.
@@ -130,9 +130,15 @@ Requests Per Second (RPS): 6248.71
 - `hyper`: For low-level HTTP handling.
 - `tokio`: Asynchronous runtime.
 - `serde`/`toml`: Configuration parsing.
+- `boa_engine`: Pure Rust JavaScript engine for PAC file evaluation.
+- `reqwest`: HTTP client for remote PAC file fetching (DIRECT, no-proxy).
 - `iced`: For the graphical user interface.
 - `libgssapi`: For Kerberos/GSSAPI integration.
 - `ntlmclient`: For NTLMv2 authentication.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed list of changes.
 
 ## Running as a Service on MacOS
 

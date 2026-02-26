@@ -55,12 +55,23 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
 
 3.  **PAC Engine (`src/pac.rs`)**:
     -   Uses **Boa (`boa_engine`)**, a pure Rust JavaScript engine, to execute PAC files.
-    -   **Threading Model**: Since `boa_engine::Context` is `!Send`, the JS execution logic runs in a **dedicated OS thread** (`std::thread`).
-    -   **Communication**: The main Tokio runtime communicates with the PAC thread via `tokio::sync::mpsc` channels for requests and `tokio::sync::oneshot` for responses.
-    -   **Implemented JS Functions**:
+    -   **PAC Fetch**: Remote PAC files (HTTP URLs) are always fetched using a DIRECT connection (`reqwest` with `.no_proxy()`), avoiding circular proxy dependencies.
+    -   **Threading Model**: Since `boa_engine::Context` is `!Send`, the JS execution logic runs in **dedicated OS threads** (`std::thread::Builder`) with an 8 MB stack size to accommodate Boa's deep recursion on complex PAC scripts.
+    -   **Communication**: The main Tokio runtime communicates with the PAC threads via `tokio::sync::mpsc` channels for requests and `tokio::sync::oneshot` for responses.
+    -   **Implemented JS Functions** (full PAC spec coverage):
+        -   `isPlainHostName(host)`: Returns true if hostname has no dots.
+        -   `dnsDomainIs(host, domain)`: Returns true if host ends with domain.
+        -   `localHostOrDomainIs(host, hostdom)`: Returns true if exact match or unqualified host matches.
+        -   `isResolvable(host)`: Returns true if DNS resolves the host.
+        -   `isInNet(host, pattern, mask)`: Returns true if resolved host IP matches network/mask.
         -   `dnsResolve(host)`: *Mocked* (returns host).
+        -   `dnsDomainLevels(host)`: Returns number of dots in hostname.
         -   `myIpAddress()`: *Mocked* (returns 127.0.0.1).
-        -   `shExpMatch(str, pattern)`: Implemented using regex (supports `*` and `?`).
+        -   `shExpMatch(str, pattern)`: Implemented using glob matching (supports `*` and `?`).
+        -   `convert_addr(ipaddr)`: Converts dotted IP string to integer.
+        -   `weekdayRange(...)`: *Stub* (returns true).
+        -   `dateRange(...)`: *Stub* (returns true).
+        -   `timeRange(...)`: *Stub* (returns true).
 
 4.  **Configuration (`src/config.rs`)**:
     -   Managed via `config.toml`.
@@ -124,7 +135,8 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 
 ## Developer Notes
 
--   **Boa & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local Boa engine. Any new PAC functions must be registered inside the spawned thread closure in `src/pac.rs`.
+-   **Boa & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local Boa engine. Any new PAC functions must be registered inside the spawned thread closure in `src/pac.rs`. Worker threads use `thread::Builder` with 8 MB stack size.
+-   **PAC Fetch**: Remote PAC files are fetched with `reqwest::Client::builder().no_proxy()` to ensure DIRECT connections.
 -   **Error Handling**: The application uses `anyhow` for error propagation and `log` for observability.
 -   **Security**: Credentials in `config.toml` are read as plain text.
 
@@ -144,6 +156,7 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 - **HTTP Handling**: Buffers request bodies to allow replaying requests during the handshake loop.
 
 ## Future Work
-1.  Implement actual DNS resolution for `dnsResolve` in PAC.
-2.  Implement `myIpAddress` to return real interface IP.
-3.  Add Keyring integration for secure credential storage (instead of plain text config).
+1.  Implement actual DNS resolution for `dnsResolve` in PAC (currently returns host as-is).
+2.  Implement `myIpAddress` to return real interface IP (currently returns 127.0.0.1).
+3.  Implement real `weekdayRange`, `dateRange`, `timeRange` (currently stubs returning true).
+4.  Add Keyring integration for secure credential storage (instead of plain text config).
