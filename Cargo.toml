@@ -29,6 +29,7 @@ libgssapi = { version = "0.7", default-features = false }
 ntlmclient = "0.2.0"
 tokio-stream = "0.1.18"
 memchr = "2.8.0"
+glob = "0.3.3"
 
 [dev-dependencies]
 tempfile = "3.25.0"

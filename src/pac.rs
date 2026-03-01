@@ -1,6 +1,7 @@
 use anyhow::{Context as AnyhowContext, Result};
 use boa_engine::string::JsString;
 use boa_engine::{Context, JsValue, NativeFunction, Source};
+use glob::Pattern;
 use log::error;
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -21,36 +22,26 @@ struct PacRequest {
 }
 
 fn glob_match(pattern: &str, text: &str) -> bool {
-    let p_chars: Vec<char> = pattern.chars().collect();
-    let t_chars: Vec<char> = text.chars().collect();
-
-    let mut p_idx = 0;
-    let mut t_idx = 0;
-    let mut star_idx = None;
-    let mut match_idx = 0;
-
-    while t_idx < t_chars.len() {
-        if p_idx < p_chars.len() && (p_chars[p_idx] == '?' || p_chars[p_idx] == t_chars[t_idx]) {
-            p_idx += 1;
-            t_idx += 1;
-        } else if p_idx < p_chars.len() && p_chars[p_idx] == '*' {
-            star_idx = Some(p_idx);
-            match_idx = t_idx;
-            p_idx += 1;
-        } else if let Some(star) = star_idx {
-            p_idx = star + 1;
-            match_idx += 1;
-            t_idx = match_idx;
+    // The glob crate fails to parse patterns with more than two consecutive asterisks
+    // (e.g. `***`) returning a PatternError ("wildcards are either regular `*` or recursive `**`").
+    // We collapse consecutive asterisks to `*` before parsing.
+    let mut collapsed_pattern = String::with_capacity(pattern.len());
+    let mut last_was_star = false;
+    for c in pattern.chars() {
+        if c == '*' {
+            if !last_was_star {
+                collapsed_pattern.push(c);
+                last_was_star = true;
+            }
         } else {
-            return false;
+            collapsed_pattern.push(c);
+            last_was_star = false;
         }
     }
 
-    while p_idx < p_chars.len() && p_chars[p_idx] == '*' {
-        p_idx += 1;
-    }
-
-    p_idx == p_chars.len()
+    Pattern::new(&collapsed_pattern)
+        .map(|p| p.matches(text))
+        .unwrap_or(false)
 }
 
 impl PacEngine {
@@ -198,7 +189,6 @@ mod tests {
             // Exact match
             ("abc", "abc", true),
             ("abc", "def", false),
-
             // Wildcard (*)
             ("*", "anything", true),
             ("*", "", true),
@@ -208,18 +198,15 @@ mod tests {
             ("a*c", "abc", true),
             ("a*c", "abbc", true),
             ("*bc*", "abcdef", true),
-
             // Question mark (?)
             ("?", "a", true),
             ("?", "", false),
             ("a?c", "abc", true),
             ("a?c", "ac", false),
             ("a?c", "abbc", false),
-
             // Mixed
             ("?b*", "abc", true),
             ("*b?", "abc", true),
-
             // Edge cases
             ("", "", true),
             ("", "a", false),
@@ -231,7 +218,9 @@ mod tests {
             assert_eq!(
                 glob_match(pattern, text),
                 expected,
-                "Pattern: '{}', Text: '{}'", pattern, text
+                "Pattern: '{}', Text: '{}'",
+                pattern,
+                text
             );
         }
     }
