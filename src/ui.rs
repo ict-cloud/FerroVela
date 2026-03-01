@@ -301,80 +301,107 @@ impl ConfigEditor {
         match message {
             Message::TabSelected(tab) => {
                 self.active_tab = tab;
+                Task::none()
             }
+            Message::ProxyPortChanged(_)
+            | Message::PacFileChanged(_)
+            | Message::UpstreamAuthTypeChanged(_)
+            | Message::UpstreamUsernameChanged(_)
+            | Message::UpstreamPasswordChanged(_)
+            | Message::UpstreamDomainChanged(_)
+            | Message::UpstreamWorkstationChanged(_)
+            | Message::UpstreamProxyUrlChanged(_)
+            | Message::ExceptionsHostsChanged(_) => {
+                self.handle_config_message(message);
+                Task::none()
+            }
+            Message::ToggleService(is_running) => {
+                self.handle_toggle_service(is_running);
+                Task::none()
+            }
+            Message::OpenLogs
+            | Message::LogsOpened(_)
+            | Message::Tick
+            | Message::External
+            | Message::WindowCloseRequested(_)
+            | Message::IdCaptured(_) => self.handle_window_message(message),
+        }
+    }
+
+    fn handle_config_message(&mut self, message: Message) {
+        match message {
             Message::ProxyPortChanged(value) => {
                 self.proxy_port = value;
-                self.save_current_config();
             }
             Message::PacFileChanged(value) => {
                 self.pac_file = value;
-                self.save_current_config();
             }
             Message::UpstreamAuthTypeChanged(value) => {
                 self.upstream_auth_type = value;
-                self.save_current_config();
             }
             Message::UpstreamUsernameChanged(value) => {
                 self.upstream_username = value;
-                self.save_current_config();
             }
             Message::UpstreamPasswordChanged(value) => {
                 self.upstream_password = value;
-                self.save_current_config();
             }
             Message::UpstreamDomainChanged(value) => {
                 self.upstream_domain = value;
-                self.save_current_config();
             }
             Message::UpstreamWorkstationChanged(value) => {
                 self.upstream_workstation = value;
-                self.save_current_config();
             }
             Message::UpstreamProxyUrlChanged(value) => {
                 self.upstream_proxy_url = value;
-                self.save_current_config();
             }
             Message::ExceptionsHostsChanged(value) => {
                 self.exceptions_hosts = value;
-                self.save_current_config();
             }
-            Message::ToggleService(is_running) => {
-                if is_running {
-                    let config = Arc::new(self.build_config());
-                    let pac_path = config.proxy.pac_file.clone();
-                    let sender = self.signal_sender.clone();
+            _ => return,
+        }
+        self.save_current_config();
+    }
 
-                    let handle = tokio::spawn(async move {
-                        let pac_engine = if let Some(path) = pac_path {
-                            info!("Loading PAC file from {}", path);
-                            match PacEngine::new(&path).await {
-                                Ok(engine) => Some(engine),
-                                Err(e) => {
-                                    error!("Failed to load PAC file: {}", e);
-                                    None
-                                }
-                            }
-                        } else {
+    fn handle_toggle_service(&mut self, is_running: bool) {
+        if is_running {
+            let config = Arc::new(self.build_config());
+            let pac_path = config.proxy.pac_file.clone();
+            let sender = self.signal_sender.clone();
+
+            let handle = tokio::spawn(async move {
+                let pac_engine = if let Some(path) = pac_path {
+                    info!("Loading PAC file from {}", path);
+                    match PacEngine::new(&path).await {
+                        Ok(engine) => Some(engine),
+                        Err(e) => {
+                            error!("Failed to load PAC file: {}", e);
                             None
-                        };
-
-                        let proxy = Proxy::new(config.clone(), pac_engine, Some(sender));
-                        if let Err(e) = proxy.run().await {
-                            error!("Proxy error: {}", e);
                         }
-                    });
-
-                    self.proxy_handle = Some(handle.abort_handle());
-                    self.service_status = ServiceStatus::Running;
-                    self.status = "Service Started".to_string();
-                } else {
-                    if let Some(handle) = self.proxy_handle.take() {
-                        handle.abort();
                     }
-                    self.service_status = ServiceStatus::Stopped;
-                    self.status = "Service Stopped".to_string();
+                } else {
+                    None
+                };
+
+                let proxy = Proxy::new(config.clone(), pac_engine, Some(sender));
+                if let Err(e) = proxy.run().await {
+                    error!("Proxy error: {}", e);
                 }
+            });
+
+            self.proxy_handle = Some(handle.abort_handle());
+            self.service_status = ServiceStatus::Running;
+            self.status = "Service Started".to_string();
+        } else {
+            if let Some(handle) = self.proxy_handle.take() {
+                handle.abort();
             }
+            self.service_status = ServiceStatus::Stopped;
+            self.status = "Service Stopped".to_string();
+        }
+    }
+
+    fn handle_window_message(&mut self, message: Message) -> Task<Message> {
+        match message {
             Message::OpenLogs => {
                 if self.log_window_id.is_none() {
                     let (id, open_task) = window::open(window::Settings {
@@ -385,10 +412,8 @@ impl ConfigEditor {
                     self.load_logs();
                     self.show_logs = true;
                     return open_task.map(move |_| Message::LogsOpened(id));
-                } else {
-                    if let Some(id) = self.log_window_id {
-                        return window::gain_focus(id);
-                    }
+                } else if let Some(id) = self.log_window_id {
+                    return window::gain_focus(id);
                 }
             }
             Message::LogsOpened(id) => {
@@ -409,12 +434,10 @@ impl ConfigEditor {
                     self.log_window_id = None;
                     self.show_logs = false;
                     return window::close(id);
+                } else if self.service_status == ServiceStatus::Running {
+                    return window::minimize(id, true);
                 } else {
-                    if self.service_status == ServiceStatus::Running {
-                        return window::minimize(id, true);
-                    } else {
-                        return window::close(id);
-                    }
+                    return window::close(id);
                 }
             }
             Message::IdCaptured(id) => {
@@ -422,6 +445,7 @@ impl ConfigEditor {
                     self.main_window_id = Some(id);
                 }
             }
+            _ => {}
         }
         Task::none()
     }

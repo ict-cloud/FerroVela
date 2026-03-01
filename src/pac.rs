@@ -198,7 +198,6 @@ mod tests {
             // Exact match
             ("abc", "abc", true),
             ("abc", "def", false),
-
             // Wildcard (*)
             ("*", "anything", true),
             ("*", "", true),
@@ -208,18 +207,15 @@ mod tests {
             ("a*c", "abc", true),
             ("a*c", "abbc", true),
             ("*bc*", "abcdef", true),
-
             // Question mark (?)
             ("?", "a", true),
             ("?", "", false),
             ("a?c", "abc", true),
             ("a?c", "ac", false),
             ("a?c", "abbc", false),
-
             // Mixed
             ("?b*", "abc", true),
             ("*b?", "abc", true),
-
             // Edge cases
             ("", "", true),
             ("", "a", false),
@@ -231,7 +227,9 @@ mod tests {
             assert_eq!(
                 glob_match(pattern, text),
                 expected,
-                "Pattern: '{}', Text: '{}'", pattern, text
+                "Pattern: '{}', Text: '{}'",
+                pattern,
+                text
             );
         }
     }
