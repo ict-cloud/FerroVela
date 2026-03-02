@@ -118,6 +118,337 @@ async fn test_pac_engine() {
     fs::remove_file(pac_path).expect("Failed to remove PAC file");
 }
 
+#[tokio::test]
+async fn test_pac_is_plain_host_name() {
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            if (isPlainHostName(host)) return "DIRECT";
+            return "PROXY 10.0.0.1:8080";
+        }
+    "#;
+    let pac_path = "test_plain_host.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // Plain hostname (no dots) -> DIRECT
+    let proxy = engine
+        .find_proxy("http://intranet/page", "intranet")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // FQDN (has dots) -> PROXY
+    let proxy = engine
+        .find_proxy("http://www.example.com/page", "www.example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY 10.0.0.1:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
+#[tokio::test]
+async fn test_pac_dns_domain_is() {
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            if (dnsDomainIs(host, ".example.com")) return "DIRECT";
+            return "PROXY 10.0.0.1:8080";
+        }
+    "#;
+    let pac_path = "test_dns_domain.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // Host in .example.com -> DIRECT
+    let proxy = engine
+        .find_proxy("http://www.example.com/", "www.example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // Host not in .example.com -> PROXY
+    let proxy = engine
+        .find_proxy("http://www.other.org/", "www.other.org")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY 10.0.0.1:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
+#[tokio::test]
+async fn test_pac_local_host_or_domain_is() {
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            if (localHostOrDomainIs(host, "www.example.com")) return "DIRECT";
+            return "PROXY 10.0.0.1:8080";
+        }
+    "#;
+    let pac_path = "test_local_host_domain.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // Exact match -> DIRECT
+    let proxy = engine
+        .find_proxy("http://www.example.com/", "www.example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // Unqualified hostname matches -> DIRECT
+    let proxy = engine
+        .find_proxy("http://www/", "www")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // Different host -> PROXY
+    let proxy = engine
+        .find_proxy("http://other.example.com/", "other.example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY 10.0.0.1:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
+#[tokio::test]
+async fn test_pac_is_in_net() {
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            if (isInNet(host, "10.0.0.0", "255.0.0.0")) return "DIRECT";
+            if (isInNet(host, "192.168.1.0", "255.255.255.0")) return "PROXY internal:8080";
+            return "PROXY 10.0.0.1:8080";
+        }
+    "#;
+    let pac_path = "test_is_in_net.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // IP in 10.0.0.0/8 -> DIRECT
+    let proxy = engine
+        .find_proxy("http://10.1.2.3/", "10.1.2.3")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // IP in 192.168.1.0/24 -> internal proxy
+    let proxy = engine
+        .find_proxy("http://192.168.1.50/", "192.168.1.50")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY internal:8080");
+
+    // IP outside both ranges -> external proxy
+    let proxy = engine
+        .find_proxy("http://8.8.8.8/", "8.8.8.8")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY 10.0.0.1:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
+#[tokio::test]
+async fn test_pac_dns_domain_levels() {
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            var levels = dnsDomainLevels(host);
+            if (levels == 0) return "DIRECT";
+            if (levels == 1) return "PROXY local:8080";
+            return "PROXY remote:8080";
+        }
+    "#;
+    let pac_path = "test_dns_levels.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // No dots -> DIRECT
+    let proxy = engine
+        .find_proxy("http://intranet/", "intranet")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // One dot -> local proxy
+    let proxy = engine
+        .find_proxy("http://example.com/", "example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY local:8080");
+
+    // Two dots -> remote proxy
+    let proxy = engine
+        .find_proxy("http://www.example.com/", "www.example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY remote:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
+#[tokio::test]
+async fn test_pac_convert_addr() {
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            var addr = convert_addr(host);
+            if (addr == 3232235876) return "DIRECT";
+            return "PROXY 10.0.0.1:8080";
+        }
+    "#;
+    // 192.168.0.100 = (192 << 24) + (168 << 16) + (0 << 8) + 100 = 3232235620
+    // 192.168.1.100 = (192 << 24) + (168 << 16) + (1 << 8) + 100 = 3232235876
+    let pac_path = "test_convert_addr.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // 192.168.1.100 = 3232235876 -> DIRECT
+    let proxy = engine
+        .find_proxy("http://192.168.1.100/", "192.168.1.100")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // Other IP -> PROXY
+    let proxy = engine
+        .find_proxy("http://10.0.0.1/", "10.0.0.1")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY 10.0.0.1:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
+#[tokio::test]
+async fn test_pac_weekday_date_time_range_stubs() {
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            if (weekdayRange("MON", "FRI")) {
+                if (dateRange(1, "JAN", 2020, 31, "DEC", 2030)) {
+                    if (timeRange(8, 20)) {
+                        return "PROXY work:8080";
+                    }
+                }
+            }
+            return "DIRECT";
+        }
+    "#;
+    let pac_path = "test_time_stubs.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // All time stubs return true, so we should get the work proxy
+    let proxy = engine
+        .find_proxy("http://example.com/", "example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY work:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
+#[tokio::test]
+async fn test_pac_combined_helpers() {
+    // A realistic PAC script using multiple helper functions together
+    let pac_content = r#"
+        function FindProxyForURL(url, host) {
+            if (isPlainHostName(host)) return "DIRECT";
+            if (dnsDomainIs(host, ".internal.corp")) return "DIRECT";
+            if (isInNet(host, "172.16.0.0", "255.240.0.0")) return "DIRECT";
+            if (dnsDomainLevels(host) > 2) return "PROXY deep:8080";
+            if (shExpMatch(host, "*.example.com")) return "PROXY example:8080";
+            return "PROXY default:8080";
+        }
+    "#;
+    let pac_path = "test_combined.pac";
+    let mut file = fs::File::create(pac_path).expect("Failed to create PAC file");
+    file.write_all(pac_content.as_bytes())
+        .expect("Failed to write PAC file");
+
+    let engine = PacEngine::new(pac_path)
+        .await
+        .expect("Failed to create PacEngine");
+
+    // Plain hostname -> DIRECT
+    let proxy = engine
+        .find_proxy("http://myserver/", "myserver")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // Internal corp domain -> DIRECT
+    let proxy = engine
+        .find_proxy("http://app.internal.corp/", "app.internal.corp")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // IP in 172.16.0.0/12 -> DIRECT
+    let proxy = engine
+        .find_proxy("http://172.20.1.5/", "172.20.1.5")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "DIRECT");
+
+    // Deep domain (3+ levels) -> deep proxy
+    let proxy = engine
+        .find_proxy("http://a.b.c.d.com/", "a.b.c.d.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY deep:8080");
+
+    // *.example.com -> example proxy
+    let proxy = engine
+        .find_proxy("http://www.example.com/", "www.example.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY example:8080");
+
+    // Anything else -> default proxy
+    let proxy = engine
+        .find_proxy("http://google.com/", "google.com")
+        .await
+        .expect("PAC failed");
+    assert_eq!(proxy, "PROXY default:8080");
+
+    fs::remove_file(pac_path).expect("Failed to remove PAC file");
+}
+
 // Helpers
 async fn start_target_server() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0")
