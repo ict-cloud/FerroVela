@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // So we should load config first.
     let config_port = match config::load_config(&args.config) {
         Ok(c) => c.proxy.port,
-        Err(_) => 3128, // Default fallback
+        Err(_) => config::default_port(), // Default fallback
     };
 
     let addr = format!("127.0.0.1:{}", config_port);
