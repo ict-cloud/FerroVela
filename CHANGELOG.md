@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.1] - 2026-03-02
+
+### Added
+- Unit tests for `resolve_proxy` function to verify exception matching and fallback behavior when the PAC engine is not present
+
+### Fixed
+- PAC file handling to always be direct and add missing PAC functionality
+
+### Changed
+- UI refactoring for macOS compliance including Sidebar and Multi-window Logs improvements
+- Refactored `ConfigEditor::update` to delegate to helper methods (`handle_config_message`, `handle_toggle_service`, `handle_window_message`) for better code readability and maintainability
+- Replaced custom glob matching implementation in `pac.rs` with the `glob` crate
+
+
 ## 2026-02-26
 
 ### PAC Engine – Robustness & Completeness
