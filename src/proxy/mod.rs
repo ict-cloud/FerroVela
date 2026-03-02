@@ -20,6 +20,8 @@ pub mod connect;
 pub mod http_utils;
 pub mod nonconnect;
 
+pub const MAGIC_SHOW_PATH: &str = "/__ferrovela/show";
+
 #[derive(Debug, Clone)]
 pub enum ProxySignal {
     Show,
@@ -83,7 +85,7 @@ impl Proxy {
                             let authenticator = authenticator.clone();
                             let signal_sender = signal_sender.clone();
                             async move {
-                                if req.uri().path() == "/__ferrovela/show" {
+                                if req.uri().path() == MAGIC_SHOW_PATH {
                                     if let Some(sender) = signal_sender {
                                         let _ = sender.send(ProxySignal::Show).await;
                                     }
