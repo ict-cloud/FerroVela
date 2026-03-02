@@ -167,3 +167,70 @@ pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
         .map_err(|never| match never {})
         .boxed()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, ExceptionsConfig, UpstreamConfig};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_resolve_proxy_no_config() {
+        let config = Arc::new(Config::default());
+        let pac = Arc::new(None);
+
+        let result = resolve_proxy("example.com:443", &config, &pac).await;
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_proxy_with_exception_match() {
+        let mut config = Config::default();
+        config.exceptions = Some(ExceptionsConfig {
+            hosts: vec!["example.com".to_string()],
+        });
+        config.upstream = Some(UpstreamConfig {
+            proxy_url: Some("http://upstream:8080".to_string()),
+            ..Default::default()
+        });
+
+        let config = Arc::new(config);
+        let pac = Arc::new(None);
+
+        let result = resolve_proxy("example.com:443", &config, &pac).await;
+        assert_eq!(result, None); // Exception matched, should go direct
+    }
+
+    #[tokio::test]
+    async fn test_resolve_proxy_with_exception_no_match() {
+        let mut config = Config::default();
+        config.exceptions = Some(ExceptionsConfig {
+            hosts: vec!["other.com".to_string()],
+        });
+        config.upstream = Some(UpstreamConfig {
+            proxy_url: Some("http://upstream:8080".to_string()),
+            ..Default::default()
+        });
+
+        let config = Arc::new(config);
+        let pac = Arc::new(None);
+
+        let result = resolve_proxy("example.com:443", &config, &pac).await;
+        assert_eq!(result, Some("http://upstream:8080".to_string())); // No match, should use upstream
+    }
+
+    #[tokio::test]
+    async fn test_resolve_proxy_upstream_only() {
+        let mut config = Config::default();
+        config.upstream = Some(UpstreamConfig {
+            proxy_url: Some("http://upstream:8080".to_string()),
+            ..Default::default()
+        });
+
+        let config = Arc::new(config);
+        let pac = Arc::new(None);
+
+        let result = resolve_proxy("example.com", &config, &pac).await;
+        assert_eq!(result, Some("http://upstream:8080".to_string()));
+    }
+}

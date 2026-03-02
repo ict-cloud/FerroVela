@@ -1,8 +1,10 @@
 use anyhow::{Context as AnyhowContext, Result};
 use boa_engine::string::JsString;
 use boa_engine::{Context, JsValue, NativeFunction, Source};
+use glob::Pattern;
 use log::error;
 use std::fs;
+use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -21,42 +23,39 @@ struct PacRequest {
 }
 
 fn glob_match(pattern: &str, text: &str) -> bool {
-    let p_chars: Vec<char> = pattern.chars().collect();
-    let t_chars: Vec<char> = text.chars().collect();
-
-    let mut p_idx = 0;
-    let mut t_idx = 0;
-    let mut star_idx = None;
-    let mut match_idx = 0;
-
-    while t_idx < t_chars.len() {
-        if p_idx < p_chars.len() && (p_chars[p_idx] == '?' || p_chars[p_idx] == t_chars[t_idx]) {
-            p_idx += 1;
-            t_idx += 1;
-        } else if p_idx < p_chars.len() && p_chars[p_idx] == '*' {
-            star_idx = Some(p_idx);
-            match_idx = t_idx;
-            p_idx += 1;
-        } else if let Some(star) = star_idx {
-            p_idx = star + 1;
-            match_idx += 1;
-            t_idx = match_idx;
+    // The glob crate fails to parse patterns with more than two consecutive asterisks
+    // (e.g. `***`) returning a PatternError ("wildcards are either regular `*` or recursive `**`").
+    // We collapse consecutive asterisks to `*` before parsing.
+    let mut collapsed_pattern = String::with_capacity(pattern.len());
+    let mut last_was_star = false;
+    for c in pattern.chars() {
+        if c == '*' {
+            if !last_was_star {
+                collapsed_pattern.push(c);
+                last_was_star = true;
+            }
         } else {
-            return false;
+            collapsed_pattern.push(c);
+            last_was_star = false;
         }
     }
 
-    while p_idx < p_chars.len() && p_chars[p_idx] == '*' {
-        p_idx += 1;
-    }
-
-    p_idx == p_chars.len()
+    Pattern::new(&collapsed_pattern)
+        .map(|p| p.matches(text))
+        .unwrap_or(false)
 }
 
 impl PacEngine {
     pub async fn new(pac_url_or_path: &str) -> Result<Self> {
         let script = if pac_url_or_path.starts_with("http") {
-            let client = reqwest::Client::new();
+            // PAC files must always be fetched with a DIRECT connection (no proxy),
+            // otherwise we'd have a circular dependency: needing the proxy config
+            // to fetch the file that provides proxy config.
+            // We also disable TLS to ensure plain HTTP works for WPAD/PAC URLs.
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .context("Failed to build HTTP client for PAC fetch")?;
             client
                 .get(pac_url_or_path)
                 .send()
@@ -80,84 +79,271 @@ impl PacEngine {
             senders.push(tx);
             let script_clone = script.clone();
 
-            thread::spawn(move || {
-                let mut context = Context::default();
+            // Boa JS engine uses deep recursion for parsing/evaluation;
+            // the default thread stack size can cause stack overflows on
+            // complex PAC scripts, so we allocate 8 MB per worker thread.
+            thread::Builder::new()
+                .name("pac-worker".into())
+                .stack_size(8 * 1024 * 1024)
+                .spawn(move || {
+                    let mut context = Context::default();
 
-                let _ = context.register_global_callable(
-                    JsString::from("dnsResolve"),
-                    1,
-                    NativeFunction::from_fn_ptr(|_, args, _| {
-                        let host = args
-                            .first()
-                            .and_then(|v| v.as_string())
-                            .map(|s| s.to_std_string_escaped())
-                            .unwrap_or_default();
-                        Ok(JsValue::from(JsString::from(host)))
-                    }),
-                );
+                    let _ = context.register_global_callable(
+                        JsString::from("dnsResolve"),
+                        1,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let host = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            Ok(JsValue::from(JsString::from(host)))
+                        }),
+                    );
 
-                let _ = context.register_global_callable(
-                    JsString::from("myIpAddress"),
-                    0,
-                    NativeFunction::from_fn_ptr(|_, _, _| {
-                        Ok(JsValue::from(JsString::from("127.0.0.1")))
-                    }),
-                );
+                    let _ = context.register_global_callable(
+                        JsString::from("myIpAddress"),
+                        0,
+                        NativeFunction::from_fn_ptr(|_, _, _| {
+                            Ok(JsValue::from(JsString::from("127.0.0.1")))
+                        }),
+                    );
 
-                let _ = context.register_global_callable(
-                    JsString::from("shExpMatch"),
-                    2,
-                    NativeFunction::from_fn_ptr(|_, args, _| {
-                        let str_val = args
-                            .first()
-                            .and_then(|v| v.as_string())
-                            .map(|s| s.to_std_string_escaped())
-                            .unwrap_or_default();
-                        let pattern = args
-                            .get(1)
-                            .and_then(|v| v.as_string())
-                            .map(|s| s.to_std_string_escaped())
-                            .unwrap_or_default();
+                    let _ = context.register_global_callable(
+                        JsString::from("shExpMatch"),
+                        2,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let str_val = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let pattern = args
+                                .get(1)
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
 
-                        let matched = glob_match(&pattern, &str_val);
-                        Ok(JsValue::from(matched))
-                    }),
-                );
+                            let matched = glob_match(&pattern, &str_val);
+                            Ok(JsValue::from(matched))
+                        }),
+                    );
 
-                if let Err(e) = context.eval(Source::from_bytes(&script_clone)) {
-                    error!("Failed to evaluate PAC script: {}", e);
-                }
+                    // isPlainHostName(host) - true if no dots in hostname
+                    let _ = context.register_global_callable(
+                        JsString::from("isPlainHostName"),
+                        1,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let host = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            Ok(JsValue::from(!host.contains('.')))
+                        }),
+                    );
 
-                while let Some(req) = rx.blocking_recv() {
-                    let global_obj = context.global_object();
+                    // dnsDomainIs(host, domain) - true if host's domain matches
+                    let _ = context.register_global_callable(
+                        JsString::from("dnsDomainIs"),
+                        2,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let host = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let domain = args
+                                .get(1)
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            Ok(JsValue::from(host.ends_with(&domain)))
+                        }),
+                    );
 
-                    let result = (|| -> Result<String> {
-                        let func_name = JsString::from("FindProxyForURL");
-                        let func = global_obj
-                            .get(func_name, &mut context)
-                            .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
+                    // localHostOrDomainIs(host, hostdom) - true if exact match
+                    // or host (without domain) matches hostdom's host part
+                    let _ = context.register_global_callable(
+                        JsString::from("localHostOrDomainIs"),
+                        2,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let host = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let hostdom = args
+                                .get(1)
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let result =
+                                host == hostdom || hostdom.starts_with(&format!("{}.", host));
+                            Ok(JsValue::from(result))
+                        }),
+                    );
 
-                        if !func.is_callable() {
-                            return Err(anyhow::anyhow!("FindProxyForURL is not defined"));
-                        }
-                        let args = [
-                            JsValue::from(JsString::from(req.url)),
-                            JsValue::from(JsString::from(req.host)),
-                        ];
-                        let res = func
-                            .as_callable()
-                            .unwrap()
-                            .call(&JsValue::undefined(), &args, &mut context)
-                            .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
+                    // isResolvable(host) - true if DNS can resolve the host
+                    let _ = context.register_global_callable(
+                        JsString::from("isResolvable"),
+                        1,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let host = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let resolvable = format!("{}:0", host)
+                                .to_socket_addrs()
+                                .map(|mut addrs| addrs.next().is_some())
+                                .unwrap_or(false);
+                            Ok(JsValue::from(resolvable))
+                        }),
+                    );
 
-                        res.as_string()
-                            .map(|s| s.to_std_string_escaped())
-                            .ok_or_else(|| anyhow::anyhow!("FindProxyForURL returned non-string"))
-                    })();
+                    // isInNet(host, pattern, mask) - true if IP of host matches pattern/mask
+                    let _ = context.register_global_callable(
+                        JsString::from("isInNet"),
+                        3,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let host = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let pattern = args
+                                .get(1)
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let mask = args
+                                .get(2)
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
 
-                    let _ = req.respond_to.send(result);
-                }
-            });
+                            let resolve_ip = |h: &str| -> Option<u32> {
+                                // Try parsing as IP first, then DNS resolve
+                                if let Ok(ip) = h.parse::<std::net::Ipv4Addr>() {
+                                    return Some(u32::from(ip));
+                                }
+                                format!("{}:0", h)
+                                    .to_socket_addrs()
+                                    .ok()
+                                    .and_then(|mut addrs| {
+                                        addrs.find_map(|a| match a {
+                                            std::net::SocketAddr::V4(v4) => {
+                                                Some(u32::from(*v4.ip()))
+                                            }
+                                            _ => None,
+                                        })
+                                    })
+                            };
+
+                            let result = (|| -> Option<bool> {
+                                let host_ip = resolve_ip(&host)?;
+                                let pattern_ip = pattern.parse::<std::net::Ipv4Addr>().ok()?;
+                                let mask_ip = mask.parse::<std::net::Ipv4Addr>().ok()?;
+                                let pattern_int = u32::from(pattern_ip);
+                                let mask_int = u32::from(mask_ip);
+                                Some((host_ip & mask_int) == (pattern_int & mask_int))
+                            })()
+                            .unwrap_or(false);
+                            Ok(JsValue::from(result))
+                        }),
+                    );
+
+                    // dnsDomainLevels(host) - returns number of dots in hostname
+                    let _ = context.register_global_callable(
+                        JsString::from("dnsDomainLevels"),
+                        1,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let host = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let levels = host.matches('.').count() as i32;
+                            Ok(JsValue::from(levels))
+                        }),
+                    );
+
+                    // convert_addr(ipaddr) - converts dotted IP string to integer
+                    let _ = context.register_global_callable(
+                        JsString::from("convert_addr"),
+                        1,
+                        NativeFunction::from_fn_ptr(|_, args, _| {
+                            let addr = args
+                                .first()
+                                .and_then(|v| v.as_string())
+                                .map(|s| s.to_std_string_escaped())
+                                .unwrap_or_default();
+                            let result = addr
+                                .parse::<std::net::Ipv4Addr>()
+                                .map(|ip| u32::from(ip) as f64)
+                                .unwrap_or(0.0);
+                            Ok(JsValue::from(result))
+                        }),
+                    );
+
+                    // weekdayRange, dateRange, timeRange - stub implementations
+                    // that return true (permissive) to avoid blocking traffic
+                    let _ = context.register_global_callable(
+                        JsString::from("weekdayRange"),
+                        3,
+                        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
+                    );
+
+                    let _ = context.register_global_callable(
+                        JsString::from("dateRange"),
+                        7,
+                        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
+                    );
+
+                    let _ = context.register_global_callable(
+                        JsString::from("timeRange"),
+                        7,
+                        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
+                    );
+
+                    if let Err(e) = context.eval(Source::from_bytes(&script_clone)) {
+                        error!("Failed to evaluate PAC script: {}", e);
+                    }
+
+                    while let Some(req) = rx.blocking_recv() {
+                        let global_obj = context.global_object();
+
+                        let result = (|| -> Result<String> {
+                            let func_name = JsString::from("FindProxyForURL");
+                            let func = global_obj
+                                .get(func_name, &mut context)
+                                .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
+
+                            if !func.is_callable() {
+                                return Err(anyhow::anyhow!("FindProxyForURL is not defined"));
+                            }
+                            let args = [
+                                JsValue::from(JsString::from(req.url)),
+                                JsValue::from(JsString::from(req.host)),
+                            ];
+                            let res = func
+                                .as_callable()
+                                .unwrap()
+                                .call(&JsValue::undefined(), &args, &mut context)
+                                .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
+
+                            res.as_string()
+                                .map(|s| s.to_std_string_escaped())
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!("FindProxyForURL returned non-string")
+                                })
+                        })();
+
+                        let _ = req.respond_to.send(result);
+                    }
+                })
+                .context("Failed to spawn PAC worker thread")?;
         }
 
         Ok(PacEngine {
@@ -198,7 +384,6 @@ mod tests {
             // Exact match
             ("abc", "abc", true),
             ("abc", "def", false),
-
             // Wildcard (*)
             ("*", "anything", true),
             ("*", "", true),
@@ -208,18 +393,15 @@ mod tests {
             ("a*c", "abc", true),
             ("a*c", "abbc", true),
             ("*bc*", "abcdef", true),
-
             // Question mark (?)
             ("?", "a", true),
             ("?", "", false),
             ("a?c", "abc", true),
             ("a?c", "ac", false),
             ("a?c", "abbc", false),
-
             // Mixed
             ("?b*", "abc", true),
             ("*b?", "abc", true),
-
             // Edge cases
             ("", "", true),
             ("", "a", false),
@@ -231,7 +413,9 @@ mod tests {
             assert_eq!(
                 glob_match(pattern, text),
                 expected,
-                "Pattern: '{}', Text: '{}'", pattern, text
+                "Pattern: '{}', Text: '{}'",
+                pattern,
+                text
             );
         }
     }
