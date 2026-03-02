@@ -20,6 +20,16 @@ Preproxy is a MacOS application designed to act as a local proxy server that for
     -   Dynamically determines the upstream proxy based on the request URL.
     -   **Fallback**: Attempts direct connection if the PAC file is unresolvable or fails.
 
+3.1 Test cases:
+     - No PAC, no exceptions, no upstream config.
+     - No PAC, exception matches.
+     - No PAC, exception does not match.
+     - PAC is `None`, upstream is present.
+     - PAC returns `PROXY` string.
+     - PAC returns `DIRECT`.
+     - PAC returns error, fall back to upstream config.
+     - Target contains port (e.g., `example.com:443`).
+
 4.  **Credential Management**:
     -   Integrates with **macOS Keychain** to securely store and retrieve proxy credentials.
     -   Does not require storing passwords in plain text configuration files.
