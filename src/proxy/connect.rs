@@ -156,16 +156,26 @@ async fn connect_via_upstream(
     let mut challenge: Option<String> = None;
     let mut header_buf = BytesMut::with_capacity(4096);
 
+    // Pre-allocate the connection request string to avoid format! allocations in the loop.
+    let base_connect_req = format!(
+        "CONNECT {} HTTP/1.1\r\nHost: {}\r\nProxy-Connection: Keep-Alive\r\n",
+        target, target
+    );
+    let mut connect_req = String::with_capacity(base_connect_req.len() + 128); // 128 for Auth headers
+
     // Handshake loop
     loop {
         // 1. Send CONNECT Request
-        let mut connect_req = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
-        connect_req.push_str("Proxy-Connection: Keep-Alive\r\n");
+        connect_req.clear();
+        connect_req.push_str(&base_connect_req);
 
         if let Some(session) = &mut auth_session {
             match session.step(challenge.as_deref()) {
                 Ok(Some(h)) => {
-                    connect_req.push_str(&format!("Proxy-Authorization: {}\r\n", h));
+                    // Manually push strings instead of formatting to avoid allocation
+                    connect_req.push_str("Proxy-Authorization: ");
+                    connect_req.push_str(&h);
+                    connect_req.push_str("\r\n");
                 }
                 Ok(None) => {
                     // Session established or no header needed
