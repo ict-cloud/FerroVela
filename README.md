@@ -20,7 +20,7 @@ FerroVela includes a simple graphical interface for managing the configuration.
 
 To launch the configuration editor:
 ```bash
-./target/release/ferrovela --ui
+./target/release/ferrovela
 ```
 
 ### Authentication Types

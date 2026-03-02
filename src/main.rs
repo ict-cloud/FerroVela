@@ -18,10 +18,6 @@ mod tests;
 struct Args {
     #[arg(short, long, default_value = "config.toml")]
     config: String,
-
-    /// Launch the configuration UI (Deprecated, always launches UI)
-    #[arg(long)]
-    ui: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
