@@ -45,6 +45,222 @@ fn glob_match(pattern: &str, text: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn register_pac_functions(context: &mut Context) {
+    let _ = context.register_global_callable(
+        JsString::from("dnsResolve"),
+        1,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let host = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            Ok(JsValue::from(JsString::from(host)))
+        }),
+    );
+
+    let _ = context.register_global_callable(
+        JsString::from("myIpAddress"),
+        0,
+        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(JsString::from("127.0.0.1")))),
+    );
+
+    let _ = context.register_global_callable(
+        JsString::from("shExpMatch"),
+        2,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let str_val = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let pattern = args
+                .get(1)
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+
+            let matched = glob_match(&pattern, &str_val);
+            Ok(JsValue::from(matched))
+        }),
+    );
+
+    // isPlainHostName(host) - true if no dots in hostname
+    let _ = context.register_global_callable(
+        JsString::from("isPlainHostName"),
+        1,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let host = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            Ok(JsValue::from(!host.contains('.')))
+        }),
+    );
+
+    // dnsDomainIs(host, domain) - true if host's domain matches
+    let _ = context.register_global_callable(
+        JsString::from("dnsDomainIs"),
+        2,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let host = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let domain = args
+                .get(1)
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            Ok(JsValue::from(host.ends_with(&domain)))
+        }),
+    );
+
+    // localHostOrDomainIs(host, hostdom) - true if exact match
+    // or host (without domain) matches hostdom's host part
+    let _ = context.register_global_callable(
+        JsString::from("localHostOrDomainIs"),
+        2,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let host = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let hostdom = args
+                .get(1)
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let result = host == hostdom || hostdom.starts_with(&format!("{}.", host));
+            Ok(JsValue::from(result))
+        }),
+    );
+
+    // isResolvable(host) - true if DNS can resolve the host
+    let _ = context.register_global_callable(
+        JsString::from("isResolvable"),
+        1,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let host = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let resolvable = format!("{}:0", host)
+                .to_socket_addrs()
+                .map(|mut addrs| addrs.next().is_some())
+                .unwrap_or(false);
+            Ok(JsValue::from(resolvable))
+        }),
+    );
+
+    // isInNet(host, pattern, mask) - true if IP of host matches pattern/mask
+    let _ = context.register_global_callable(
+        JsString::from("isInNet"),
+        3,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let host = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let pattern = args
+                .get(1)
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let mask = args
+                .get(2)
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+
+            let resolve_ip = |h: &str| -> Option<u32> {
+                // Try parsing as IP first, then DNS resolve
+                if let Ok(ip) = h.parse::<std::net::Ipv4Addr>() {
+                    return Some(u32::from(ip));
+                }
+                format!("{}:0", h)
+                    .to_socket_addrs()
+                    .ok()
+                    .and_then(|mut addrs| {
+                        addrs.find_map(|a| match a {
+                            std::net::SocketAddr::V4(v4) => Some(u32::from(*v4.ip())),
+                            _ => None,
+                        })
+                    })
+            };
+
+            let result = (|| -> Option<bool> {
+                let host_ip = resolve_ip(&host)?;
+                let pattern_ip = pattern.parse::<std::net::Ipv4Addr>().ok()?;
+                let mask_ip = mask.parse::<std::net::Ipv4Addr>().ok()?;
+                let pattern_int = u32::from(pattern_ip);
+                let mask_int = u32::from(mask_ip);
+                Some((host_ip & mask_int) == (pattern_int & mask_int))
+            })()
+            .unwrap_or(false);
+            Ok(JsValue::from(result))
+        }),
+    );
+
+    // dnsDomainLevels(host) - returns number of dots in hostname
+    let _ = context.register_global_callable(
+        JsString::from("dnsDomainLevels"),
+        1,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let host = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let levels = host.matches('.').count() as i32;
+            Ok(JsValue::from(levels))
+        }),
+    );
+
+    // convert_addr(ipaddr) - converts dotted IP string to integer
+    let _ = context.register_global_callable(
+        JsString::from("convert_addr"),
+        1,
+        NativeFunction::from_fn_ptr(|_, args, _| {
+            let addr = args
+                .first()
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_std_string_escaped())
+                .unwrap_or_default();
+            let result = addr
+                .parse::<std::net::Ipv4Addr>()
+                .map(|ip| u32::from(ip) as f64)
+                .unwrap_or(0.0);
+            Ok(JsValue::from(result))
+        }),
+    );
+
+    // weekdayRange, dateRange, timeRange - stub implementations
+    // that return true (permissive) to avoid blocking traffic
+    let _ = context.register_global_callable(
+        JsString::from("weekdayRange"),
+        3,
+        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
+    );
+
+    let _ = context.register_global_callable(
+        JsString::from("dateRange"),
+        7,
+        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
+    );
+
+    let _ = context.register_global_callable(
+        JsString::from("timeRange"),
+        7,
+        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
+    );
+}
+
 impl PacEngine {
     pub async fn new(pac_url_or_path: &str) -> Result<Self> {
         let script = if pac_url_or_path.starts_with("http") {
@@ -88,224 +304,7 @@ impl PacEngine {
                 .spawn(move || {
                     let mut context = Context::default();
 
-                    let _ = context.register_global_callable(
-                        JsString::from("dnsResolve"),
-                        1,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let host = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            Ok(JsValue::from(JsString::from(host)))
-                        }),
-                    );
-
-                    let _ = context.register_global_callable(
-                        JsString::from("myIpAddress"),
-                        0,
-                        NativeFunction::from_fn_ptr(|_, _, _| {
-                            Ok(JsValue::from(JsString::from("127.0.0.1")))
-                        }),
-                    );
-
-                    let _ = context.register_global_callable(
-                        JsString::from("shExpMatch"),
-                        2,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let str_val = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let pattern = args
-                                .get(1)
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-
-                            let matched = glob_match(&pattern, &str_val);
-                            Ok(JsValue::from(matched))
-                        }),
-                    );
-
-                    // isPlainHostName(host) - true if no dots in hostname
-                    let _ = context.register_global_callable(
-                        JsString::from("isPlainHostName"),
-                        1,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let host = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            Ok(JsValue::from(!host.contains('.')))
-                        }),
-                    );
-
-                    // dnsDomainIs(host, domain) - true if host's domain matches
-                    let _ = context.register_global_callable(
-                        JsString::from("dnsDomainIs"),
-                        2,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let host = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let domain = args
-                                .get(1)
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            Ok(JsValue::from(host.ends_with(&domain)))
-                        }),
-                    );
-
-                    // localHostOrDomainIs(host, hostdom) - true if exact match
-                    // or host (without domain) matches hostdom's host part
-                    let _ = context.register_global_callable(
-                        JsString::from("localHostOrDomainIs"),
-                        2,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let host = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let hostdom = args
-                                .get(1)
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let result =
-                                host == hostdom || hostdom.starts_with(&format!("{}.", host));
-                            Ok(JsValue::from(result))
-                        }),
-                    );
-
-                    // isResolvable(host) - true if DNS can resolve the host
-                    let _ = context.register_global_callable(
-                        JsString::from("isResolvable"),
-                        1,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let host = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let resolvable = format!("{}:0", host)
-                                .to_socket_addrs()
-                                .map(|mut addrs| addrs.next().is_some())
-                                .unwrap_or(false);
-                            Ok(JsValue::from(resolvable))
-                        }),
-                    );
-
-                    // isInNet(host, pattern, mask) - true if IP of host matches pattern/mask
-                    let _ = context.register_global_callable(
-                        JsString::from("isInNet"),
-                        3,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let host = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let pattern = args
-                                .get(1)
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let mask = args
-                                .get(2)
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-
-                            let resolve_ip = |h: &str| -> Option<u32> {
-                                // Try parsing as IP first, then DNS resolve
-                                if let Ok(ip) = h.parse::<std::net::Ipv4Addr>() {
-                                    return Some(u32::from(ip));
-                                }
-                                format!("{}:0", h)
-                                    .to_socket_addrs()
-                                    .ok()
-                                    .and_then(|mut addrs| {
-                                        addrs.find_map(|a| match a {
-                                            std::net::SocketAddr::V4(v4) => {
-                                                Some(u32::from(*v4.ip()))
-                                            }
-                                            _ => None,
-                                        })
-                                    })
-                            };
-
-                            let result = (|| -> Option<bool> {
-                                let host_ip = resolve_ip(&host)?;
-                                let pattern_ip = pattern.parse::<std::net::Ipv4Addr>().ok()?;
-                                let mask_ip = mask.parse::<std::net::Ipv4Addr>().ok()?;
-                                let pattern_int = u32::from(pattern_ip);
-                                let mask_int = u32::from(mask_ip);
-                                Some((host_ip & mask_int) == (pattern_int & mask_int))
-                            })()
-                            .unwrap_or(false);
-                            Ok(JsValue::from(result))
-                        }),
-                    );
-
-                    // dnsDomainLevels(host) - returns number of dots in hostname
-                    let _ = context.register_global_callable(
-                        JsString::from("dnsDomainLevels"),
-                        1,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let host = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let levels = host.matches('.').count() as i32;
-                            Ok(JsValue::from(levels))
-                        }),
-                    );
-
-                    // convert_addr(ipaddr) - converts dotted IP string to integer
-                    let _ = context.register_global_callable(
-                        JsString::from("convert_addr"),
-                        1,
-                        NativeFunction::from_fn_ptr(|_, args, _| {
-                            let addr = args
-                                .first()
-                                .and_then(|v| v.as_string())
-                                .map(|s| s.to_std_string_escaped())
-                                .unwrap_or_default();
-                            let result = addr
-                                .parse::<std::net::Ipv4Addr>()
-                                .map(|ip| u32::from(ip) as f64)
-                                .unwrap_or(0.0);
-                            Ok(JsValue::from(result))
-                        }),
-                    );
-
-                    // weekdayRange, dateRange, timeRange - stub implementations
-                    // that return true (permissive) to avoid blocking traffic
-                    let _ = context.register_global_callable(
-                        JsString::from("weekdayRange"),
-                        3,
-                        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
-                    );
-
-                    let _ = context.register_global_callable(
-                        JsString::from("dateRange"),
-                        7,
-                        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
-                    );
-
-                    let _ = context.register_global_callable(
-                        JsString::from("timeRange"),
-                        7,
-                        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
-                    );
+                    register_pac_functions(&mut context);
 
                     if let Err(e) = context.eval(Source::from_bytes(&script_clone)) {
                         error!("Failed to evaluate PAC script: {}", e);
