@@ -6,7 +6,7 @@ pub fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 pub fn parse_content_length(headers: &str) -> usize {
     for line in headers.lines() {
-        if line.to_lowercase().starts_with("content-length:") {
+        if line.len() >= 15 && line.as_bytes()[..15].eq_ignore_ascii_case(b"content-length:") {
             if let Some(val) = line.split(':').nth(1) {
                 return val.trim().parse().unwrap_or(0);
             }

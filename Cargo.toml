@@ -57,3 +57,8 @@ opt-level = "s" # or "z"
 codegen-units = 1
 lto = "thin" #alternatives "fat" or "false"
 strip = "debuginfo"
+
+[[bench]]
+name = "parse_content_length_bench"
+harness = false
+path = "benches/parse_content_length_bench.rs"
