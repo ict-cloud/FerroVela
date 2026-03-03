@@ -1,5 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use ferrovela::proxy::http_utils::parse_content_length;
+use std::hint::black_box;
 
 fn bench_parse_content_length(c: &mut Criterion) {
     let headers = "Host: example.com\r\nUser-Agent: curl/7.68.0\r\nAccept: */*\r\nContent-Length: 42\r\nConnection: keep-alive\r\n";

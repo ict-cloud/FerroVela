@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use memchr::memmem;
+use std::hint::black_box;
 
 // The current implementation in src/proxy/connect.rs
 fn current_find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -40,57 +41,27 @@ fn bench_subsequence(c: &mut Criterion) {
     let mut group = c.benchmark_group("find_subsequence");
 
     group.bench_function("current_small", |b| {
-        b.iter(|| {
-            current_find_subsequence(
-                criterion::black_box(&small_haystack),
-                criterion::black_box(needle),
-            )
-        })
+        b.iter(|| current_find_subsequence(black_box(&small_haystack), black_box(needle)))
     });
 
     group.bench_function("memchr_small", |b| {
-        b.iter(|| {
-            optimized_find_subsequence(
-                criterion::black_box(&small_haystack),
-                criterion::black_box(needle),
-            )
-        })
+        b.iter(|| optimized_find_subsequence(black_box(&small_haystack), black_box(needle)))
     });
 
     group.bench_function("current_large", |b| {
-        b.iter(|| {
-            current_find_subsequence(
-                criterion::black_box(&large_haystack),
-                criterion::black_box(needle),
-            )
-        })
+        b.iter(|| current_find_subsequence(black_box(&large_haystack), black_box(needle)))
     });
 
     group.bench_function("memchr_large", |b| {
-        b.iter(|| {
-            optimized_find_subsequence(
-                criterion::black_box(&large_haystack),
-                criterion::black_box(needle),
-            )
-        })
+        b.iter(|| optimized_find_subsequence(black_box(&large_haystack), black_box(needle)))
     });
 
     group.bench_function("current_early", |b| {
-        b.iter(|| {
-            current_find_subsequence(
-                criterion::black_box(&early_haystack),
-                criterion::black_box(needle),
-            )
-        })
+        b.iter(|| current_find_subsequence(black_box(&early_haystack), black_box(needle)))
     });
 
     group.bench_function("memchr_early", |b| {
-        b.iter(|| {
-            optimized_find_subsequence(
-                criterion::black_box(&early_haystack),
-                criterion::black_box(needle),
-            )
-        })
+        b.iter(|| optimized_find_subsequence(black_box(&early_haystack), black_box(needle)))
     });
 
     group.finish();
