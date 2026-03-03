@@ -18,10 +18,6 @@ mod tests;
 struct Args {
     #[arg(short, long, default_value = "config.toml")]
     config: String,
-
-    /// Launch the configuration UI (Deprecated, always launches UI)
-    #[arg(long)]
-    ui: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -36,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // So we should load config first.
     let config_port = match config::load_config(&args.config) {
         Ok(c) => c.proxy.port,
-        Err(_) => 3128, // Default fallback
+        Err(_) => config::default_port(), // Default fallback
     };
 
     let addr = format!("127.0.0.1:{}", config_port);
@@ -44,8 +40,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     if let Ok(mut stream) = TcpStream::connect(&addr) {
         // Send Magic Request
-        let request =
-            "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+        let request = format!(
+            "GET {} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+            crate::proxy::MAGIC_SHOW_PATH
+        );
         if stream.write_all(request.as_bytes()).is_ok() {
             let mut buffer = [0; 1024];
             if let Ok(n) = stream.read(&mut buffer) {

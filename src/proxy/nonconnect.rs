@@ -39,7 +39,7 @@ pub async fn handle(
 
     if let Some(proxy_addr) = proxy_addr_opt {
         debug!("Proxying {} via upstream: {}", target_addr, proxy_addr);
-        handle_upstream(req, proxy_addr, config, authenticator).await
+        handle_upstream(req, proxy_addr, authenticator).await
     } else {
         debug!("Proxying {} direct", target_addr);
         handle_direct(req, host, port).await
@@ -96,7 +96,6 @@ async fn handle_direct(
 async fn handle_upstream(
     req: Request<hyper::body::Incoming>,
     proxy_addr: String,
-    _config: Arc<Config>,
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let addr = proxy_addr

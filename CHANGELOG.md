@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.2] - 2026-03-03
+
+### Changed
+- Removed deprecated `--ui` CLI argument
+- Refactored JS context setup by extracting it in `PacEngine::new`
+- Removed unused `_config` parameter in `handle_upstream`
+- Extracted magic string `/__ferrovela/show` to a constant
+
+### Fixed
+- Used `default_port()` fallback instead of hardcoded `3128` port
+
+### Performance
+- Optimized `parse_content_length` to avoid allocations
+- Optimized string allocations in proxy `CONNECT` handshake
+
+### Tests
+- Added unit tests for Basic Authenticator
+
 ## [0.1.1] - 2026-03-02
 
 ### Added
