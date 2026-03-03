@@ -62,3 +62,8 @@ strip = "debuginfo"
 name = "parse_content_length_bench"
 harness = false
 path = "benches/parse_content_length_bench.rs"
+
+[[bench]]
+name = "request_bench"
+harness = false
+path = "benches/request_bench.rs"
