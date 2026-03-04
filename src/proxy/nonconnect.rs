@@ -53,7 +53,12 @@ async fn handle_direct(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let addr = format!("{}:{}", host, port);
     let stream = match TcpStream::connect(&addr).await {
-        Ok(s) => s,
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!("Failed to set nodelay on direct connection to {}: {}", addr, e);
+            }
+            s
+        }
         Err(e) => {
             error!("Failed to connect direct to target {}: {}", addr, e);
             let mut resp = Response::new(full(format!("Failed to connect direct to target {}: {}", addr, e)));
@@ -122,7 +127,12 @@ async fn handle_upstream(
 
     // 2. Connect
     let stream = match TcpStream::connect(addr).await {
-        Ok(s) => s,
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!("Failed to set nodelay on upstream connection to {}: {}", addr, e);
+            }
+            s
+        }
         Err(e) => {
             error!("Failed to connect to upstream proxy {} for target {}: {}", addr, target_addr, e);
             let mut resp = Response::new(full(format!("Failed to connect to upstream proxy {} for target {}: {}", addr, target_addr, e)));

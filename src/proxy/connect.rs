@@ -93,7 +93,12 @@ async fn connect_direct(
     }
 
     let mut server = match TcpStream::connect(&safe_addrs[..]).await {
-        Ok(s) => s,
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!("Failed to set nodelay on direct connection to {}: {}", target, e);
+            }
+            s
+        }
         Err(e) => {
             return Err(std::io::Error::new(
                 e.kind(),
@@ -167,7 +172,12 @@ async fn connect_via_upstream(
         .trim_start_matches("https://");
 
     let mut server = match TcpStream::connect(addr).await {
-        Ok(s) => s,
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!("Failed to set nodelay on upstream connection to {}: {}", addr, e);
+            }
+            s
+        }
         Err(e) => {
             return Err(std::io::Error::new(
                 e.kind(),
