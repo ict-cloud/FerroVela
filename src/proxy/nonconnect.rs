@@ -39,7 +39,7 @@ pub async fn handle(
 
     if let Some(proxy_addr) = proxy_addr_opt {
         debug!("Proxying {} via upstream: {}", target_addr, proxy_addr);
-        handle_upstream(req, proxy_addr, authenticator).await
+        handle_upstream(req, proxy_addr, target_addr, authenticator).await
     } else {
         debug!("Proxying {} direct", target_addr);
         handle_direct(req, host, port).await
@@ -55,8 +55,8 @@ async fn handle_direct(
     let stream = match TcpStream::connect(&addr).await {
         Ok(s) => s,
         Err(e) => {
-            error!("Failed to connect to {}: {}", addr, e);
-            let mut resp = Response::new(full(format!("Failed to connect: {}", e)));
+            error!("Failed to connect direct to target {}: {}", addr, e);
+            let mut resp = Response::new(full(format!("Failed to connect direct to target {}: {}", addr, e)));
             *resp.status_mut() = StatusCode::BAD_GATEWAY;
             return Ok(resp);
         }
@@ -96,6 +96,7 @@ async fn handle_direct(
 async fn handle_upstream(
     req: Request<hyper::body::Incoming>,
     proxy_addr: String,
+    target_addr: String,
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let addr = proxy_addr
@@ -123,8 +124,8 @@ async fn handle_upstream(
     let stream = match TcpStream::connect(addr).await {
         Ok(s) => s,
         Err(e) => {
-            error!("Failed to connect to upstream {}: {}", addr, e);
-            let mut resp = Response::new(full(format!("Failed to connect to upstream: {}", e)));
+            error!("Failed to connect to upstream proxy {} for target {}: {}", addr, target_addr, e);
+            let mut resp = Response::new(full(format!("Failed to connect to upstream proxy {} for target {}: {}", addr, target_addr, e)));
             *resp.status_mut() = StatusCode::BAD_GATEWAY;
             return Ok(resp);
         }
