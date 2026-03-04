@@ -143,6 +143,18 @@ async fn handle_upstream(
     let mut challenge: Option<String> = None;
     let mut retry_count = 0;
 
+    // Pre-construct the base request outside the loop to avoid redundant allocations
+    let mut builder = Request::builder().method(method).uri(uri).version(version);
+
+    for (k, v) in headers.iter() {
+        if k != "proxy-authorization" {
+            builder = builder.header(k, v);
+        }
+    }
+
+    // We use () for the base body since it allows the Request to be cloned easily
+    let base_req = builder.body(()).unwrap();
+
     // Loop
     loop {
         retry_count += 1;
@@ -154,23 +166,15 @@ async fn handle_upstream(
         }
 
         // Reconstruct Request
-        let mut builder = Request::builder()
-            .method(method.clone())
-            .uri(uri.clone())
-            .version(version);
-
-        for (k, v) in headers.iter() {
-            if k != "proxy-authorization" {
-                builder = builder.header(k, v);
-            }
-        }
+        let mut req = base_req.clone();
 
         // Add Proxy-Authorization
         if let Some(session) = &mut auth_session {
             match session.step(challenge.as_deref()) {
                 Ok(Some(h)) => {
                     if let Ok(val) = HeaderValue::from_str(&h) {
-                        builder = builder.header(hyper::header::PROXY_AUTHORIZATION, val);
+                        req.headers_mut()
+                            .insert(hyper::header::PROXY_AUTHORIZATION, val);
                     }
                 }
                 Ok(None) => {}
@@ -183,7 +187,8 @@ async fn handle_upstream(
             }
         }
 
-        let req = builder.body(full(body_bytes.clone())).unwrap();
+        // Map the empty body () to the actual body bytes
+        let req = req.map(|_| full(body_bytes.clone()));
 
         // Send Request
         let resp = match sender.send_request(req).await {
