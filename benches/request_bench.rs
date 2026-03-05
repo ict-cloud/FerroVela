@@ -1,6 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use hyper::header::HeaderValue;
 use hyper::{Method, Request, Version};
+use std::hint::black_box;
 
 pub fn request_builder_bench(c: &mut Criterion) {
     let method = Method::GET;

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.3] - 2026-03-05
+
+### Changed
+- Enhanced connection error messages with target details for easier debugging
+- Updated project dependencies
+
+### Performance
+- Implemented `TCP_NODELAY` on all proxy `TcpStream`s to optimize latency and significantly improve throughput
+- Optimized the request builder in the proxy authentication loop to avoid redundant allocations
+
 ## [0.1.2] - 2026-03-03
 
 ### Changed
