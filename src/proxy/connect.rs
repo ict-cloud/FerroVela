@@ -88,14 +88,20 @@ async fn connect_direct(
     if safe_addrs.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
-            format!("Blocked: Target {} resolves to loopback or private network", target),
+            format!(
+                "Blocked: Target {} resolves to loopback or private network",
+                target
+            ),
         ));
     }
 
     let mut server = match TcpStream::connect(&safe_addrs[..]).await {
         Ok(s) => {
             if let Err(e) = s.set_nodelay(true) {
-                debug!("Failed to set nodelay on direct connection to {}: {}", target, e);
+                debug!(
+                    "Failed to set nodelay on direct connection to {}: {}",
+                    target, e
+                );
             }
             s
         }
@@ -174,14 +180,20 @@ async fn connect_via_upstream(
     let mut server = match TcpStream::connect(addr).await {
         Ok(s) => {
             if let Err(e) = s.set_nodelay(true) {
-                debug!("Failed to set nodelay on upstream connection to {}: {}", addr, e);
+                debug!(
+                    "Failed to set nodelay on upstream connection to {}: {}",
+                    addr, e
+                );
             }
             s
         }
         Err(e) => {
             return Err(std::io::Error::new(
                 e.kind(),
-                format!("Failed to connect to upstream proxy {} for target {}: {}", addr, target, e),
+                format!(
+                    "Failed to connect to upstream proxy {} for target {}: {}",
+                    addr, target, e
+                ),
             ));
         }
     };

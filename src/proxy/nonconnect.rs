@@ -55,13 +55,19 @@ async fn handle_direct(
     let stream = match TcpStream::connect(&addr).await {
         Ok(s) => {
             if let Err(e) = s.set_nodelay(true) {
-                debug!("Failed to set nodelay on direct connection to {}: {}", addr, e);
+                debug!(
+                    "Failed to set nodelay on direct connection to {}: {}",
+                    addr, e
+                );
             }
             s
         }
         Err(e) => {
             error!("Failed to connect direct to target {}: {}", addr, e);
-            let mut resp = Response::new(full(format!("Failed to connect direct to target {}: {}", addr, e)));
+            let mut resp = Response::new(full(format!(
+                "Failed to connect direct to target {}: {}",
+                addr, e
+            )));
             *resp.status_mut() = StatusCode::BAD_GATEWAY;
             return Ok(resp);
         }
@@ -129,13 +135,22 @@ async fn handle_upstream(
     let stream = match TcpStream::connect(addr).await {
         Ok(s) => {
             if let Err(e) = s.set_nodelay(true) {
-                debug!("Failed to set nodelay on upstream connection to {}: {}", addr, e);
+                debug!(
+                    "Failed to set nodelay on upstream connection to {}: {}",
+                    addr, e
+                );
             }
             s
         }
         Err(e) => {
-            error!("Failed to connect to upstream proxy {} for target {}: {}", addr, target_addr, e);
-            let mut resp = Response::new(full(format!("Failed to connect to upstream proxy {} for target {}: {}", addr, target_addr, e)));
+            error!(
+                "Failed to connect to upstream proxy {} for target {}: {}",
+                addr, target_addr, e
+            );
+            let mut resp = Response::new(full(format!(
+                "Failed to connect to upstream proxy {} for target {}: {}",
+                addr, target_addr, e
+            )));
             *resp.status_mut() = StatusCode::BAD_GATEWAY;
             return Ok(resp);
         }
