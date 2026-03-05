@@ -67,6 +67,11 @@ impl Proxy {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             let (stream, _) = listener.accept().await?;
+
+            if let Err(e) = stream.set_nodelay(true) {
+                log::debug!("Failed to set nodelay on accepted connection: {}", e);
+            }
+
             let io = TokioIo::new(stream);
             let config = self.config.clone();
             let pac = self.pac.clone();
