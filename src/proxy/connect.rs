@@ -68,7 +68,15 @@ async fn connect_direct(
     target: &str,
     config: &Arc<Config>,
 ) -> std::io::Result<()> {
-    let addrs = tokio::net::lookup_host(target).await?;
+    let addrs = match tokio::net::lookup_host(target).await {
+        Ok(a) => a,
+        Err(e) => {
+            return Err(std::io::Error::new(
+                e.kind(),
+                format!("Failed to resolve direct target {}: {}", target, e),
+            ));
+        }
+    };
     let mut safe_addrs = Vec::new();
 
     for addr in addrs {
@@ -80,11 +88,30 @@ async fn connect_direct(
     if safe_addrs.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
-            "Blocked: Target resolves to loopback or private network",
+            format!(
+                "Blocked: Target {} resolves to loopback or private network",
+                target
+            ),
         ));
     }
 
-    let mut server = TcpStream::connect(&safe_addrs[..]).await?;
+    let mut server = match TcpStream::connect(&safe_addrs[..]).await {
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!(
+                    "Failed to set nodelay on direct connection to {}: {}",
+                    target, e
+                );
+            }
+            s
+        }
+        Err(e) => {
+            return Err(std::io::Error::new(
+                e.kind(),
+                format!("Failed to connect direct to target {}: {}", target, e),
+            ));
+        }
+    };
     tokio::io::copy_bidirectional(upgraded, &mut server).await?;
     Ok(())
 }
@@ -150,7 +177,26 @@ async fn connect_via_upstream(
         .trim_start_matches("http://")
         .trim_start_matches("https://");
 
-    let mut server = TcpStream::connect(addr).await?;
+    let mut server = match TcpStream::connect(addr).await {
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!(
+                    "Failed to set nodelay on upstream connection to {}: {}",
+                    addr, e
+                );
+            }
+            s
+        }
+        Err(e) => {
+            return Err(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to connect to upstream proxy {} for target {}: {}",
+                    addr, target, e
+                ),
+            ));
+        }
+    };
 
     let mut auth_session = authenticator.as_ref().map(|a| a.create_session());
     let mut challenge: Option<String> = None;

@@ -39,7 +39,7 @@ pub async fn handle(
 
     if let Some(proxy_addr) = proxy_addr_opt {
         debug!("Proxying {} via upstream: {}", target_addr, proxy_addr);
-        handle_upstream(req, proxy_addr, authenticator).await
+        handle_upstream(req, proxy_addr, target_addr, authenticator).await
     } else {
         debug!("Proxying {} direct", target_addr);
         handle_direct(req, host, port).await
@@ -53,10 +53,21 @@ async fn handle_direct(
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let addr = format!("{}:{}", host, port);
     let stream = match TcpStream::connect(&addr).await {
-        Ok(s) => s,
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!(
+                    "Failed to set nodelay on direct connection to {}: {}",
+                    addr, e
+                );
+            }
+            s
+        }
         Err(e) => {
-            error!("Failed to connect to {}: {}", addr, e);
-            let mut resp = Response::new(full(format!("Failed to connect: {}", e)));
+            error!("Failed to connect direct to target {}: {}", addr, e);
+            let mut resp = Response::new(full(format!(
+                "Failed to connect direct to target {}: {}",
+                addr, e
+            )));
             *resp.status_mut() = StatusCode::BAD_GATEWAY;
             return Ok(resp);
         }
@@ -96,6 +107,7 @@ async fn handle_direct(
 async fn handle_upstream(
     req: Request<hyper::body::Incoming>,
     proxy_addr: String,
+    target_addr: String,
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
     let addr = proxy_addr
@@ -121,10 +133,24 @@ async fn handle_upstream(
 
     // 2. Connect
     let stream = match TcpStream::connect(addr).await {
-        Ok(s) => s,
+        Ok(s) => {
+            if let Err(e) = s.set_nodelay(true) {
+                debug!(
+                    "Failed to set nodelay on upstream connection to {}: {}",
+                    addr, e
+                );
+            }
+            s
+        }
         Err(e) => {
-            error!("Failed to connect to upstream {}: {}", addr, e);
-            let mut resp = Response::new(full(format!("Failed to connect to upstream: {}", e)));
+            error!(
+                "Failed to connect to upstream proxy {} for target {}: {}",
+                addr, target_addr, e
+            );
+            let mut resp = Response::new(full(format!(
+                "Failed to connect to upstream proxy {} for target {}: {}",
+                addr, target_addr, e
+            )));
             *resp.status_mut() = StatusCode::BAD_GATEWAY;
             return Ok(resp);
         }
@@ -143,6 +169,18 @@ async fn handle_upstream(
     let mut challenge: Option<String> = None;
     let mut retry_count = 0;
 
+    // Pre-construct the base request outside the loop to avoid redundant allocations
+    let mut builder = Request::builder().method(method).uri(uri).version(version);
+
+    for (k, v) in headers.iter() {
+        if k != "proxy-authorization" {
+            builder = builder.header(k, v);
+        }
+    }
+
+    // We use () for the base body since it allows the Request to be cloned easily
+    let base_req = builder.body(()).unwrap();
+
     // Loop
     loop {
         retry_count += 1;
@@ -154,23 +192,15 @@ async fn handle_upstream(
         }
 
         // Reconstruct Request
-        let mut builder = Request::builder()
-            .method(method.clone())
-            .uri(uri.clone())
-            .version(version);
-
-        for (k, v) in headers.iter() {
-            if k != "proxy-authorization" {
-                builder = builder.header(k, v);
-            }
-        }
+        let mut req = base_req.clone();
 
         // Add Proxy-Authorization
         if let Some(session) = &mut auth_session {
             match session.step(challenge.as_deref()) {
                 Ok(Some(h)) => {
                     if let Ok(val) = HeaderValue::from_str(&h) {
-                        builder = builder.header(hyper::header::PROXY_AUTHORIZATION, val);
+                        req.headers_mut()
+                            .insert(hyper::header::PROXY_AUTHORIZATION, val);
                     }
                 }
                 Ok(None) => {}
@@ -183,7 +213,8 @@ async fn handle_upstream(
             }
         }
 
-        let req = builder.body(full(body_bytes.clone())).unwrap();
+        // Map the empty body () to the actual body bytes
+        let req = req.map(|_| full(body_bytes.clone()));
 
         // Send Request
         let resp = match sender.send_request(req).await {
