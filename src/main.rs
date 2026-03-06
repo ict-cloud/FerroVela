@@ -40,10 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     if let Ok(mut stream) = TcpStream::connect(&addr) {
         // Send Magic Request
-        let request = format!(
-            "GET {} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
-            crate::proxy::MAGIC_SHOW_PATH
-        );
+        let request = crate::proxy::MAGIC_SHOW_REQUEST;
         if stream.write_all(request.as_bytes()).is_ok() {
             let mut buffer = [0; 1024];
             if let Ok(n) = stream.read(&mut buffer) {
