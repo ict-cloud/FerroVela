@@ -56,7 +56,7 @@ async fn tunnel(
 
     if let Some(proxy_addr) = upstream_proxy {
         debug!("Connecting via upstream: {}", proxy_addr);
-        connect_via_upstream(&mut upgraded, &target, &proxy_addr, &config, authenticator).await
+        connect_via_upstream(&mut upgraded, &target, &proxy_addr, authenticator).await
     } else {
         debug!("Connecting direct: {}", target);
         connect_direct(&mut upgraded, &target, &config).await
@@ -169,7 +169,6 @@ async fn connect_via_upstream(
     upgraded: &mut TokioIo<Upgraded>,
     target: &str,
     proxy_addr: &str,
-    _config: &Arc<Config>,
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
 ) -> std::io::Result<()> {
     // Connect to upstream proxy
