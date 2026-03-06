@@ -5,6 +5,7 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::client::conn::http1;
 use hyper::header::HeaderValue;
+use hyper::body::Body;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use log::{debug, error};
@@ -253,7 +254,19 @@ async fn handle_upstream(
             }
 
             // Drain body so we can reuse connection
-            let _ = resp.collect().await; // Ignore errors during drain
+            let mut body = resp.into_body();
+            let mut drained_bytes = 0;
+            let max_drain_bytes = 1024 * 1024 * 5; // 5 MB limit
+            while let Some(Ok(frame)) =
+                std::future::poll_fn(|cx| std::pin::Pin::new(&mut body).poll_frame(cx)).await
+            {
+                if let Some(data) = frame.data_ref() {
+                    drained_bytes += data.len();
+                    if drained_bytes > max_drain_bytes {
+                        break; // Stop draining to prevent unbounded memory/CPU usage
+                    }
+                }
+            } // Ignore errors during drain
 
             // Continue loop
             continue;
