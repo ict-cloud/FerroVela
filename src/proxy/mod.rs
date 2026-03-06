@@ -21,6 +21,8 @@ pub mod http_utils;
 pub mod nonconnect;
 
 pub const MAGIC_SHOW_PATH: &str = "/__ferrovela/show";
+pub const MAGIC_SHOW_REQUEST: &str =
+    "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
 
 #[derive(Debug, Clone)]
 pub enum ProxySignal {
