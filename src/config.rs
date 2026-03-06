@@ -1,19 +1,23 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use musli::{Decode, Encode};
 use std::fs;
 
-#[derive(Default, Debug, Deserialize, Serialize, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Default, Debug, Decode, Encode, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub proxy: ProxyConfig,
     pub upstream: Option<UpstreamConfig>,
     pub exceptions: Option<ExceptionsConfig>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Decode, Encode, Clone, Deserialize, Serialize)]
 pub struct ProxyConfig {
+    #[musli(default = default_port)]
     #[serde(default = "default_port")]
     pub port: u16,
     pub pac_file: Option<String>,
+    #[musli(default)]
     #[serde(default)]
     pub allow_private_ips: bool,
 }
@@ -32,7 +36,7 @@ pub fn default_port() -> u16 {
     3128
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Decode, Encode, Clone, Deserialize, Serialize)]
 pub struct UpstreamConfig {
     pub auth_type: String, // "ntlm", "kerberos", "basic", "none"
     pub username: Option<String>,
@@ -55,7 +59,7 @@ impl Default for UpstreamConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[derive(Debug, Decode, Encode, Clone, Default, Deserialize, Serialize)]
 pub struct ExceptionsConfig {
     pub hosts: Vec<String>,
 }

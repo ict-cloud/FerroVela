@@ -11,7 +11,6 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
-serde = { version = "1", features = ["derive"] }
 toml = "1.0"
 log = "0.4"
 anyhow = "1"
@@ -30,10 +29,13 @@ ntlmclient = "0.2.0"
 tokio-stream = "0.1.18"
 memchr = "2.8.0"
 glob = "0.3.3"
+musli = { version = "0.0.149", features = ["serde", "alloc", "storage"] }
+serde = { version = "1.0.228", features = ["derive"] }
 
 [dev-dependencies]
 tempfile = "3.25.0"
 criterion = { version = "0.8", features = ["async_tokio"] }
+serde = { version = "1.0.228", features = ["derive"] }
 
 [[bench]]
 name = "connect_bench"
@@ -67,3 +69,8 @@ path = "benches/parse_content_length_bench.rs"
 name = "request_bench"
 harness = false
 path = "benches/request_bench.rs"
+
+[[bench]]
+name = "musli_vs_serde_bench"
+harness = false
+path = "benches/musli_vs_serde_bench.rs"

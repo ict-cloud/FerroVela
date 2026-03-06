@@ -1,0 +1,100 @@
+   Compiling ferrovela v0.1.3 (/app)
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+ --> benches/musli_vs_serde_bench.rs:1:17
+  |
+1 | use criterion::{black_box, criterion_group, criterion_main, Criterion};
+  |                 ^^^^^^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:34:37
+   |
+34 |             let s = toml::to_string(black_box(&config)).unwrap();
+   |                                     ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:35:13
+   |
+35 |             black_box(s);
+   |             ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:45:44
+   |
+45 |             let c: Config = toml::from_str(black_box(&toml_str)).unwrap();
+   |                                            ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:46:13
+   |
+46 |             black_box(c);
+   |             ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:55:48
+   |
+55 |             let bytes = musli::storage::to_vec(black_box(&config)).unwrap();
+   |                                                ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:56:13
+   |
+56 |             black_box(bytes);
+   |             ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:66:52
+   |
+66 |             let c: Config = musli::storage::decode(black_box(bytes.as_slice())).unwrap();
+   |                                                    ^^^^^^^^^
+
+warning: use of deprecated function `criterion::black_box`: use `std::hint::black_box()` instead
+  --> benches/musli_vs_serde_bench.rs:67:13
+   |
+67 |             black_box(c);
+   |             ^^^^^^^^^
+
+warning: `ferrovela` (bench "musli_vs_serde_bench") generated 9 warnings
+    Finished `bench` profile [optimized] target(s) in 1m 30s
+     Running benches/musli_vs_serde_bench.rs (target/release/deps/musli_vs_serde_bench-3cba38a27f31f421)
+Gnuplot not found, using plotters backend
+Benchmarking serde serialize toml
+Benchmarking serde serialize toml: Warming up for 3.0000 s
+Benchmarking serde serialize toml: Collecting 100 samples in estimated 5.0214 s (641k iterations)
+Benchmarking serde serialize toml: Analyzing
+serde serialize toml    time:   [6.9134 µs 7.5557 µs 8.2796 µs]
+Found 17 outliers among 100 measurements (17.00%)
+  3 (3.00%) high mild
+  14 (14.00%) high severe
+
+Benchmarking serde deserialize toml
+Benchmarking serde deserialize toml: Warming up for 3.0000 s
+Benchmarking serde deserialize toml: Collecting 100 samples in estimated 5.0393 s (354k iterations)
+Benchmarking serde deserialize toml: Analyzing
+serde deserialize toml  time:   [12.226 µs 13.168 µs 14.186 µs]
+Found 14 outliers among 100 measurements (14.00%)
+  12 (12.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking musli serialize binary (storage)
+Benchmarking musli serialize binary (storage): Warming up for 3.0000 s
+Benchmarking musli serialize binary (storage): Collecting 100 samples in estimated 5.0025 s (8.9M iterations)
+Benchmarking musli serialize binary (storage): Analyzing
+musli serialize binary (storage)
+                        time:   [519.94 ns 520.40 ns 520.88 ns]
+Found 8 outliers among 100 measurements (8.00%)
+  1 (1.00%) low severe
+  1 (1.00%) low mild
+  5 (5.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking musli deserialize binary (storage)
+Benchmarking musli deserialize binary (storage): Warming up for 3.0000 s
+Benchmarking musli deserialize binary (storage): Collecting 100 samples in estimated 5.0005 s (4.9M iterations)
+Benchmarking musli deserialize binary (storage): Analyzing
+musli deserialize binary (storage)
+                        time:   [950.23 ns 952.75 ns 956.00 ns]
+Found 7 outliers among 100 measurements (7.00%)
+  3 (3.00%) high mild
+  4 (4.00%) high severe
