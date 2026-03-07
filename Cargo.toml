@@ -12,6 +12,7 @@ toml = "1.0"
 log = "0.4"
 anyhow = "1"
 url = "2"
+musli = { version = "0.0.149", features = ["serde", "alloc", "storage"] }
 # For PAC file execution
 boa_engine = "0.21"
 
@@ -65,3 +66,8 @@ path = "benches/parse_content_length_bench.rs"
 name = "request_bench"
 harness = false
 path = "benches/request_bench.rs"
+
+[[bench]]
+name = "musli_vs_serde_bench"
+harness = false
+path = "benches/musli_vs_serde_bench.rs"
