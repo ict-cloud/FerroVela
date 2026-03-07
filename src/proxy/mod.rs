@@ -125,8 +125,7 @@ pub struct FerroVelaProxy {
 impl ProxyHttp for FerroVelaProxy {
     type CTX = ();
 
-    fn new_ctx(&self) -> Self::CTX {
-    }
+    fn new_ctx(&self) -> Self::CTX {}
 
     async fn upstream_peer(
         &self,
@@ -211,7 +210,8 @@ impl ProxyHttp for FerroVelaProxy {
 
 #[cfg(test)]
 impl Proxy {
-    #[allow(dead_code)] pub async fn run_with_listener_mock(
+    #[allow(dead_code)]
+    pub async fn run_with_listener_mock(
         &self,
         _listener: tokio::net::TcpListener,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -221,7 +221,8 @@ impl Proxy {
 
 #[cfg(not(test))]
 impl Proxy {
-    #[allow(dead_code)] pub async fn run_with_listener_mock(
+    #[allow(dead_code)]
+    pub async fn run_with_listener_mock(
         &self,
         _listener: tokio::net::TcpListener,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

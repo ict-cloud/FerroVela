@@ -127,9 +127,9 @@ Requests Per Second (RPS): 6248.71
 
 ## Dependencies
 
-- `hyper`: For low-level HTTP handling.
+- `pingora`: For proxying and low-level HTTP handling.
 - `tokio`: Asynchronous runtime.
-- `serde`/`toml`: Configuration parsing.
+- `musli`/`serde`/`toml`: Configuration parsing and serialization.
 - `boa_engine`: Pure Rust JavaScript engine for PAC file evaluation.
 - `reqwest`: HTTP client for remote PAC file fetching (DIRECT, no-proxy).
 - `iced`: For the graphical user interface.
