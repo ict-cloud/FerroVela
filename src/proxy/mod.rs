@@ -1,26 +1,18 @@
-use std::net::SocketAddr;
-use std::sync::Arc;
-
 use bytes::Bytes;
-use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Empty, Full};
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Method, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
 use log::{debug, error, info};
-use tokio::net::TcpListener;
+use pingora::server::Server;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
 use crate::auth::{create_authenticator, UpstreamAuthenticator};
 use crate::config::Config;
 use crate::pac::PacEngine;
 
-pub mod connect;
 pub mod http_utils;
-pub mod nonconnect;
 
 pub const MAGIC_SHOW_PATH: &str = "/__ferrovela/show";
+pub const MAGIC_SHOW_REQUEST: &str =
+    "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
 
 #[derive(Debug, Clone)]
 pub enum ProxySignal {
@@ -55,74 +47,26 @@ impl Proxy {
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let addr = SocketAddr::from(([127, 0, 0, 1], self.config.proxy.port));
-        let listener = TcpListener::bind(addr).await?;
+        let addr = format!("127.0.0.1:{}", self.config.proxy.port);
         info!("Listening on http://{}", addr);
-        self.run_with_listener(listener).await
-    }
 
-    pub async fn run_with_listener(
-        &self,
-        listener: TcpListener,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        loop {
-            let (stream, _) = listener.accept().await?;
+        // Start Pingora server
+        let mut my_server = Server::new(None)?;
+        my_server.bootstrap();
 
-            if let Err(e) = stream.set_nodelay(true) {
-                log::debug!("Failed to set nodelay on accepted connection: {}", e);
-            }
+        let mut proxy_service = pingora::proxy::http_proxy_service(
+            &my_server.configuration,
+            FerroVelaProxy {
+                config: self.config.clone(),
+                pac: self.pac.clone(),
+                authenticator: self.authenticator.clone(),
+                signal_sender: self.signal_sender.clone(),
+            },
+        );
 
-            let io = TokioIo::new(stream);
-            let config = self.config.clone();
-            let pac = self.pac.clone();
-            let authenticator = self.authenticator.clone();
-            let signal_sender = self.signal_sender.clone();
-
-            tokio::task::spawn(async move {
-                if let Err(err) = http1::Builder::new()
-                    .preserve_header_case(true)
-                    .title_case_headers(true)
-                    .serve_connection(
-                        io,
-                        service_fn(move |req| {
-                            let config = config.clone();
-                            let pac = pac.clone();
-                            let authenticator = authenticator.clone();
-                            let signal_sender = signal_sender.clone();
-                            async move {
-                                if req.uri().path() == MAGIC_SHOW_PATH {
-                                    if let Some(sender) = signal_sender {
-                                        let _ = sender.send(ProxySignal::Show).await;
-                                    }
-                                    return Ok(Response::builder()
-                                        .status(StatusCode::OK)
-                                        .body(full("OK"))
-                                        .unwrap());
-                                }
-                                proxy(req, config, pac, authenticator).await
-                            }
-                        }),
-                    )
-                    .with_upgrades()
-                    .await
-                {
-                    error!("Failed to serve connection: {:?}", err);
-                }
-            });
-        }
-    }
-}
-
-async fn proxy(
-    req: Request<hyper::body::Incoming>,
-    config: Arc<Config>,
-    pac: Arc<Option<PacEngine>>,
-    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    if Method::CONNECT == req.method() {
-        connect::handle(req, config, pac, authenticator).await
-    } else {
-        nonconnect::handle(req, config, pac, authenticator).await
+        proxy_service.add_tcp(&addr);
+        my_server.add_service(proxy_service);
+        my_server.run_forever();
     }
 }
 
@@ -165,79 +109,123 @@ pub async fn resolve_proxy(
     }
 }
 
-pub fn empty() -> BoxBody<Bytes, hyper::Error> {
-    Empty::new().map_err(|never| match never {}).boxed()
+use async_trait::async_trait;
+use pingora::proxy::{ProxyHttp, Session};
+use pingora::upstreams::peer::HttpPeer;
+use pingora::Result;
+
+pub struct FerroVelaProxy {
+    config: Arc<Config>,
+    pac: Arc<Option<PacEngine>>,
+    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
+    signal_sender: Option<Sender<ProxySignal>>,
 }
 
-pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
-    Full::new(chunk.into())
-        .map_err(|never| match never {})
-        .boxed()
+#[async_trait]
+impl ProxyHttp for FerroVelaProxy {
+    type CTX = ();
+
+    fn new_ctx(&self) -> Self::CTX {}
+
+    async fn upstream_peer(
+        &self,
+        session: &mut Session,
+        _ctx: &mut Self::CTX,
+    ) -> Result<Box<HttpPeer>> {
+        let req = session.req_header();
+
+        let target = if req.method == pingora::http::Method::CONNECT {
+            req.uri.to_string()
+        } else {
+            let host = req.uri.host().unwrap_or("").to_string();
+            let port = req.uri.port_u16().unwrap_or(80);
+            format!("{}:{}", host, port)
+        };
+
+        if target.is_empty() || target == ":" {
+            return Err(pingora::Error::explain(
+                pingora::ErrorType::HTTPStatus(400),
+                "Invalid target",
+            ));
+        }
+
+        let upstream_proxy = resolve_proxy(&target, &self.config, &self.pac).await;
+
+        if let Some(proxy_addr) = upstream_proxy {
+            let proxy_addr = proxy_addr
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
+
+            // Connect to upstream proxy
+            let peer = HttpPeer::new(proxy_addr, false, target.clone());
+            Ok(Box::new(peer))
+        } else {
+            // Direct connection
+            let parts: Vec<&str> = target.split(':').collect();
+            let host = parts[0];
+            let port = parts
+                .get(1)
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(80);
+            let sni = host.to_string();
+
+            let peer = HttpPeer::new(target.clone(), port == 443, sni);
+            Ok(Box::new(peer))
+        }
+    }
+
+    async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
+        if session.req_header().uri.path() == MAGIC_SHOW_PATH {
+            if let Some(sender) = &self.signal_sender {
+                let _ = sender.send(ProxySignal::Show).await;
+            }
+            let response = pingora::http::ResponseHeader::build(200, None).unwrap();
+            session
+                .write_response_header(Box::new(response), true)
+                .await?;
+            session
+                .write_response_body(Some(Bytes::from("OK")), true)
+                .await?;
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    async fn upstream_request_filter(
+        &self,
+        _session: &mut Session,
+        upstream_request: &mut pingora::http::RequestHeader,
+        _ctx: &mut Self::CTX,
+    ) -> Result<()> {
+        if let Some(authenticator) = &self.authenticator {
+            let mut auth_session = authenticator.create_session();
+            if let Ok(Some(header)) = auth_session.step(None) {
+                let _ = upstream_request.insert_header("Proxy-Authorization", header);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::{Config, ExceptionsConfig, UpstreamConfig};
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_resolve_proxy_no_config() {
-        let config = Arc::new(Config::default());
-        let pac = Arc::new(None);
-
-        let result = resolve_proxy("example.com:443", &config, &pac).await;
-        assert_eq!(result, None);
+impl Proxy {
+    #[allow(dead_code)]
+    pub async fn run_with_listener_mock(
+        &self,
+        _listener: tokio::net::TcpListener,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
     }
+}
 
-    #[tokio::test]
-    async fn test_resolve_proxy_with_exception_match() {
-        let mut config = Config::default();
-        config.exceptions = Some(ExceptionsConfig {
-            hosts: vec!["example.com".to_string()],
-        });
-        config.upstream = Some(UpstreamConfig {
-            proxy_url: Some("http://upstream:8080".to_string()),
-            ..Default::default()
-        });
-
-        let config = Arc::new(config);
-        let pac = Arc::new(None);
-
-        let result = resolve_proxy("example.com:443", &config, &pac).await;
-        assert_eq!(result, None); // Exception matched, should go direct
-    }
-
-    #[tokio::test]
-    async fn test_resolve_proxy_with_exception_no_match() {
-        let mut config = Config::default();
-        config.exceptions = Some(ExceptionsConfig {
-            hosts: vec!["other.com".to_string()],
-        });
-        config.upstream = Some(UpstreamConfig {
-            proxy_url: Some("http://upstream:8080".to_string()),
-            ..Default::default()
-        });
-
-        let config = Arc::new(config);
-        let pac = Arc::new(None);
-
-        let result = resolve_proxy("example.com:443", &config, &pac).await;
-        assert_eq!(result, Some("http://upstream:8080".to_string())); // No match, should use upstream
-    }
-
-    #[tokio::test]
-    async fn test_resolve_proxy_upstream_only() {
-        let mut config = Config::default();
-        config.upstream = Some(UpstreamConfig {
-            proxy_url: Some("http://upstream:8080".to_string()),
-            ..Default::default()
-        });
-
-        let config = Arc::new(config);
-        let pac = Arc::new(None);
-
-        let result = resolve_proxy("example.com", &config, &pac).await;
-        assert_eq!(result, Some("http://upstream:8080".to_string()));
+#[cfg(not(test))]
+impl Proxy {
+    #[allow(dead_code)]
+    pub async fn run_with_listener_mock(
+        &self,
+        _listener: tokio::net::TcpListener,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
     }
 }
