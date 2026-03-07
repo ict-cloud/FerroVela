@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0] - 2026-03-07
+
+### Added
+- Specification document for Pingora evaluation
+
+### Changed
+- Replaced `hyper` with `pingora` framework for proxying
+- Replaced `serde` with `musli` for serialization where possible
+
+### Security
+- Fixed potential OOM vulnerability by size-limiting response body drain
+
 ## [0.1.3] - 2026-03-05
 
 ### Changed
