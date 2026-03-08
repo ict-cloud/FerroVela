@@ -1,7 +1,11 @@
 use anyhow::Result;
 use musli::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 #[derive(Default, Debug, Decode, Encode, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -87,7 +91,22 @@ pub fn load_config(path: &str) -> Result<Config> {
 
 pub fn save_config(path: &str, config: &Config) -> Result<()> {
     let content = toml::to_string(config)?;
-    fs::write(path, content)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+
+    #[cfg(unix)]
+    options.mode(0o600);
+
+    let mut file = options.open(path)?;
+
+    #[cfg(unix)]
+    {
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(Permissions::from_mode(0o600))?;
+    }
+
+    file.write_all(content.as_bytes())?;
     Ok(())
 }
 
@@ -139,5 +158,34 @@ mod tests {
     fn test_exceptions_empty() {
         let exceptions = ExceptionsConfig { hosts: vec![] };
         assert!(!exceptions.matches("example.com"));
+    }
+
+    #[test]
+    fn test_save_config_serialization() {
+        use tempfile::NamedTempFile;
+
+        // Create a temporary file
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp_file
+            .path()
+            .to_str()
+            .expect("Failed to get temp file path");
+
+        // Create a default config
+        let config = Config::default();
+
+        // Save the config
+        save_config(path, &config).expect("Failed to save config");
+
+        // Read the content back
+        let content = fs::read_to_string(path).expect("Failed to read back config file");
+
+        // Verify the content is valid TOML and contains expected default values
+        assert!(content.contains("port = 3128"));
+
+        // Ensure it can be deserialized back into a Config object
+        let loaded_config: Config =
+            toml::from_str(&content).expect("Failed to deserialize saved config");
+        assert_eq!(loaded_config.proxy.port, 3128);
     }
 }

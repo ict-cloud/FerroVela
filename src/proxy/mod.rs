@@ -145,7 +145,7 @@ impl ProxyHttp for FerroVelaProxy {
         let target = if req.method == pingora::http::Method::CONNECT {
             req.uri.to_string()
         } else {
-            let host = req.uri.host().unwrap_or("").to_string();
+            let host = req.uri.host().unwrap_or("");
             let port = req.uri.port_u16().unwrap_or(80);
             format!("{}:{}", host, port)
         };

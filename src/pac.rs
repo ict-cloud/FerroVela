@@ -376,7 +376,24 @@ impl PacEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::glob_match;
+    use super::{glob_match, register_pac_functions};
+    use boa_engine::{Context, Source};
+
+    #[test]
+    fn test_is_plain_host_name() {
+        let mut context = Context::default();
+        register_pac_functions(&mut context);
+
+        let res1 = context
+            .eval(Source::from_bytes("isPlainHostName('example.com')"))
+            .unwrap();
+        assert_eq!(res1.as_boolean(), Some(false));
+
+        let res2 = context
+            .eval(Source::from_bytes("isPlainHostName('localhost')"))
+            .unwrap();
+        assert_eq!(res2.as_boolean(), Some(true));
+    }
 
     #[test]
     fn test_glob_match_cases() {
