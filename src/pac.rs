@@ -310,13 +310,14 @@ impl PacEngine {
                         error!("Failed to evaluate PAC script: {}", e);
                     }
 
+                    let func_name = JsString::from("FindProxyForURL");
+
                     while let Some(req) = rx.blocking_recv() {
                         let global_obj = context.global_object();
 
                         let result = (|| -> Result<String> {
-                            let func_name = JsString::from("FindProxyForURL");
                             let func = global_obj
-                                .get(func_name, &mut context)
+                                .get(func_name.clone(), &mut context)
                                 .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
 
                             if !func.is_callable() {

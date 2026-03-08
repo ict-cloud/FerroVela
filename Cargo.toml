@@ -71,3 +71,8 @@ path = "benches/request_bench.rs"
 name = "musli_vs_serde_bench"
 harness = false
 path = "benches/musli_vs_serde_bench.rs"
+
+[[bench]]
+name = "pac_bench"
+harness = false
+path = "benches/pac_bench.rs"

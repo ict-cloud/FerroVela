@@ -214,4 +214,3 @@ impl ProxyHttp for FerroVelaProxy {
         Ok(())
     }
 }
-
