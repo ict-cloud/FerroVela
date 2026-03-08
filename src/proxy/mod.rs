@@ -69,6 +69,7 @@ impl Proxy {
         my_server.run_forever();
     }
 
+    #[allow(dead_code)]
     pub async fn run_with_listener(
         &self,
         _listener: tokio::net::TcpListener,
@@ -214,4 +215,3 @@ impl ProxyHttp for FerroVelaProxy {
         Ok(())
     }
 }
-
