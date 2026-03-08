@@ -69,6 +69,7 @@ impl Proxy {
         my_server.run_forever();
     }
 
+    #[cfg(test)]
     pub async fn run_with_listener(
         &self,
         _listener: tokio::net::TcpListener,
