@@ -29,6 +29,7 @@ memchr = "2.8.0"
 glob = "0.3.3"
 pingora = { version = "0.8", features = ["proxy"] }
 async-trait = "0.1.89"
+keyring = "3.6.3"
 
 [lib]
 name = "ferrovela"

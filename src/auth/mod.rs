@@ -22,9 +22,20 @@ pub trait AuthSession: Send + Sync {
 }
 
 pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamAuthenticator>> {
+    let mut password = config.password.clone();
+    if config.use_keyring && password.is_none() {
+        if let Some(username) = &config.username {
+            if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
+                if let Ok(pw) = entry.get_password() {
+                    password = Some(pw);
+                }
+            }
+        }
+    }
+
     match config.auth_type.as_str() {
         "basic" => {
-            if let (Some(u), Some(p)) = (&config.username, &config.password) {
+            if let (Some(u), Some(p)) = (&config.username, &password) {
                 Some(Box::new(basic::BasicAuthenticator::new(
                     u.clone(),
                     p.clone(),
@@ -48,7 +59,7 @@ pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamA
         }
         "mock_kerberos" => Some(Box::new(mock_kerberos::MockKerberosAuthenticator::new())),
         "ntlm" => {
-            if let (Some(u), Some(p)) = (&config.username, &config.password) {
+            if let (Some(u), Some(p)) = (&config.username, &password) {
                 Some(Box::new(ntlm::NtlmAuthenticator::new(
                     u.clone(),
                     p.clone(),

@@ -38,6 +38,9 @@ pub struct UpstreamConfig {
     pub auth_type: String, // "ntlm", "kerberos", "basic", "none"
     pub username: Option<String>,
     pub password: Option<String>,
+    #[musli(default)]
+    #[serde(default)]
+    pub use_keyring: bool,
     pub domain: Option<String>,
     pub workstation: Option<String>,
     pub proxy_url: Option<String>, // if no PAC, use this
@@ -49,6 +52,7 @@ impl Default for UpstreamConfig {
             auth_type: "none".to_string(),
             username: None,
             password: None,
+            use_keyring: false,
             domain: None,
             workstation: None,
             proxy_url: None,

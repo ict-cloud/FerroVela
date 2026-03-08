@@ -69,6 +69,17 @@ password = "password"
 proxy_url = "http://proxy.corp.com:8080"
 ```
 
+### Store Passwords in System Keyring
+
+You can store the upstream proxy password securely in the operating system's native keychain (e.g., macOS Keychain, Windows Credential Manager, Secret Service on Linux) instead of keeping it in plaintext within the `config.toml` file.
+
+This can be managed via the **Graphical Interface** by checking the **Store password in system keyring** toggle in the Upstream Settings. When enabled, your password is saved to the OS keychain and removed from the configuration file.
+
+To configure it manually:
+1. Ensure `use_keyring = true` is set in the `[upstream]` section.
+2. Ensure the `password` field is removed or empty in your `config.toml`.
+3. Add the credential to the keyring service under the name `ferrovela` with your corresponding `username`.
+
 ### Manual Configuration
 
 Configuration can also be manually managed through a `config.toml` file.
@@ -81,7 +92,8 @@ pac_file = "http://wpad/wpad.dat" # or local path
 [upstream]
 auth_type = "ntlm" # or "basic", "kerberos", "none"
 username = "user"
-password = "password"
+use_keyring = false # set to true to retrieve password from the OS keychain
+password = "password" # omitted if use_keyring is true
 domain = "CORP" # Required for NTLM
 workstation = "WORKSTATION" # Optional for NTLM
 proxy_url = "http://upstream:8080"
