@@ -68,6 +68,13 @@ impl Proxy {
         my_server.add_service(proxy_service);
         my_server.run_forever();
     }
+
+    pub async fn run_with_listener(
+        &self,
+        _listener: tokio::net::TcpListener,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
 }
 
 pub async fn resolve_proxy(
@@ -208,24 +215,3 @@ impl ProxyHttp for FerroVelaProxy {
     }
 }
 
-#[cfg(test)]
-impl Proxy {
-    #[allow(dead_code)]
-    pub async fn run_with_listener_mock(
-        &self,
-        _listener: tokio::net::TcpListener,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
-    }
-}
-
-#[cfg(not(test))]
-impl Proxy {
-    #[allow(dead_code)]
-    pub async fn run_with_listener_mock(
-        &self,
-        _listener: tokio::net::TcpListener,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
-    }
-}
