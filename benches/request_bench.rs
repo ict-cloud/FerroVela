@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 fn benchmark_target_split(c: &mut Criterion) {
     let mut group = c.benchmark_group("Target Split");
@@ -12,7 +13,7 @@ fn benchmark_target_split(c: &mut Criterion) {
                 .get(1)
                 .and_then(|p| p.parse::<u16>().ok())
                 .unwrap_or(80);
-            criterion::black_box((host, port));
+            black_box((host, port));
         });
     });
 
@@ -23,7 +24,7 @@ fn benchmark_target_split(c: &mut Criterion) {
             } else {
                 (target, 80)
             };
-            criterion::black_box((host, port));
+            black_box((host, port));
         });
     });
 
