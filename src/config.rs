@@ -1,7 +1,11 @@
 use anyhow::Result;
 use musli::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 #[derive(Default, Debug, Decode, Encode, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -87,7 +91,22 @@ pub fn load_config(path: &str) -> Result<Config> {
 
 pub fn save_config(path: &str, config: &Config) -> Result<()> {
     let content = toml::to_string(config)?;
-    fs::write(path, content)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+
+    #[cfg(unix)]
+    options.mode(0o600);
+
+    let mut file = options.open(path)?;
+
+    #[cfg(unix)]
+    {
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(Permissions::from_mode(0o600))?;
+    }
+
+    file.write_all(content.as_bytes())?;
     Ok(())
 }
 
