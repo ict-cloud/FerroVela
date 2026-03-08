@@ -159,4 +159,33 @@ mod tests {
         let exceptions = ExceptionsConfig { hosts: vec![] };
         assert!(!exceptions.matches("example.com"));
     }
+
+    #[test]
+    fn test_save_config_serialization() {
+        use tempfile::NamedTempFile;
+
+        // Create a temporary file
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        let path = temp_file
+            .path()
+            .to_str()
+            .expect("Failed to get temp file path");
+
+        // Create a default config
+        let config = Config::default();
+
+        // Save the config
+        save_config(path, &config).expect("Failed to save config");
+
+        // Read the content back
+        let content = fs::read_to_string(path).expect("Failed to read back config file");
+
+        // Verify the content is valid TOML and contains expected default values
+        assert!(content.contains("port = 3128"));
+
+        // Ensure it can be deserialized back into a Config object
+        let loaded_config: Config =
+            toml::from_str(&content).expect("Failed to deserialize saved config");
+        assert_eq!(loaded_config.proxy.port, 3128);
+    }
 }
