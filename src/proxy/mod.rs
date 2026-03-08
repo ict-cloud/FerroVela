@@ -69,6 +69,7 @@ impl Proxy {
         my_server.run_forever();
     }
 
+    #[allow(dead_code)]
     pub async fn run_with_listener(
         &self,
         _listener: tokio::net::TcpListener,
@@ -168,12 +169,11 @@ impl ProxyHttp for FerroVelaProxy {
             Ok(Box::new(peer))
         } else {
             // Direct connection
-            let parts: Vec<&str> = target.split(':').collect();
-            let host = parts[0];
-            let port = parts
-                .get(1)
-                .and_then(|p| p.parse::<u16>().ok())
-                .unwrap_or(80);
+            let (host, port) = if let Some((h, p)) = target.split_once(':') {
+                (h, p.parse::<u16>().unwrap_or(80))
+            } else {
+                (target.as_str(), 80)
+            };
             let sni = host.to_string();
 
             let peer = HttpPeer::new(target.clone(), port == 443, sni);
@@ -214,4 +214,3 @@ impl ProxyHttp for FerroVelaProxy {
         Ok(())
     }
 }
-
