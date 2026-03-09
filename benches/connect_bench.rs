@@ -40,5 +40,10 @@ fn benchmark_kerberos(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, benchmark_connect, benchmark_stream, benchmark_kerberos);
+criterion_group!(
+    benches,
+    benchmark_connect,
+    benchmark_stream,
+    benchmark_kerberos
+);
 criterion_main!(benches);
