@@ -7,6 +7,7 @@ pub mod mock_kerberos;
 pub mod ntlm;
 
 /// Trait for upstream authentication factory.
+#[allow(dead_code)]
 pub trait UpstreamAuthenticator: Send + Sync {
     /// Creates a new authentication session.
     fn create_session(&self) -> Box<dyn AuthSession>;
@@ -14,6 +15,7 @@ pub trait UpstreamAuthenticator: Send + Sync {
 
 /// Trait for an authentication session.
 /// Handles the handshake process.
+#[allow(dead_code)]
 pub trait AuthSession: Send + Sync {
     /// Processes a challenge from the server (e.g., from `Proxy-Authenticate` header).
     /// If `challenge` is `None`, it's the initial step.
@@ -21,6 +23,7 @@ pub trait AuthSession: Send + Sync {
     fn step(&mut self, challenge: Option<&str>) -> Result<Option<String>>;
 }
 
+#[allow(dead_code)]
 pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamAuthenticator>> {
     match config.auth_type.as_str() {
         "basic" => {
