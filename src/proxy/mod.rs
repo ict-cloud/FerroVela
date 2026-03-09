@@ -68,6 +68,12 @@ impl Proxy {
             },
         );
 
+        if let Some(app) = proxy_service.app_logic_mut() {
+            let mut options = pingora::apps::HttpServerOptions::default();
+            options.allow_connect_method_proxying = true;
+            app.server_options = Some(options);
+        }
+
         proxy_service.add_tcp(&addr);
         my_server.add_service(proxy_service);
         #[cfg(unix)]
