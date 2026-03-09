@@ -5,6 +5,8 @@ allow_private_ips = false
 
 [upstream]
 auth_type = "kerberos"
+username = "user"
+password = "password"
 
 [exceptions]
 hosts = ["localhost", "127.0.0.1", "*.local"]
