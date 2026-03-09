@@ -56,7 +56,7 @@ impl Proxy {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn run_with_listener(
         &self,
         _listener: tokio::net::TcpListener,
@@ -65,7 +65,6 @@ impl Proxy {
     }
 }
 
-#[allow(dead_code)]
 pub async fn resolve_proxy(
     target: &str,
     config: &Arc<Config>,
