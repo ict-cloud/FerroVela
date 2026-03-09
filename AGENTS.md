@@ -61,17 +61,18 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
     -   **Implemented JS Functions** (full PAC spec coverage):
         -   `isPlainHostName(host)`: Returns true if hostname has no dots.
         -   `dnsDomainIs(host, domain)`: Returns true if host ends with domain.
-        -   `localHostOrDomainIs(host, hostdom)`: Returns true if exact match or unqualified host matches.
+        -   `localHostOrDomainIs(host, hostdom)`: Returns true if exact match or unqualified (no dots) host matches the host part of hostdom.
         -   `isResolvable(host)`: Returns true if DNS resolves the host.
         -   `isInNet(host, pattern, mask)`: Returns true if resolved host IP matches network/mask.
-        -   `dnsResolve(host)`: *Mocked* (returns host).
+        -   `dnsResolve(host)`: Resolves hostname to dotted IPv4 string via DNS. Returns `null` on failure.
         -   `dnsDomainLevels(host)`: Returns number of dots in hostname.
-        -   `myIpAddress()`: *Mocked* (returns 127.0.0.1).
+        -   `myIpAddress()`: Returns the machine's detected outbound IPv4 address (via UDP socket probe). Falls back to `127.0.0.1` when the network is unreachable.
         -   `shExpMatch(str, pattern)`: Implemented using glob matching (supports `*` and `?`).
         -   `convert_addr(ipaddr)`: Converts dotted IP string to integer.
-        -   `weekdayRange(...)`: *Stub* (returns true).
-        -   `dateRange(...)`: *Stub* (returns true).
-        -   `timeRange(...)`: *Stub* (returns true).
+        -   `weekdayRange(wd1 [, wd2 [, "GMT"]])`: Checks if current weekday is within range. Supports wrapping ranges (e.g., `FRI..MON`).
+        -   `dateRange(...)`: Supports day, month, year single values and ranges (1–6 params + optional `"GMT"`).
+        -   `timeRange(...)`: Supports hour, hour+min, hour+min+sec single values and ranges (1–6 params + optional `"GMT"`).
+        -   `alert(message)`: Logs the message via `log::info!` (PAC-alert prefix). Prevents JS runtime errors in PAC scripts that use `alert()` for debugging.
 
 4.  **Configuration (`src/config.rs`)**:
     -   Managed via `config.toml`.
@@ -156,7 +157,4 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 - **HTTP Handling**: Buffers request bodies to allow replaying requests during the handshake loop.
 
 ## Future Work
-1.  Implement actual DNS resolution for `dnsResolve` in PAC (currently returns host as-is).
-2.  Implement `myIpAddress` to return real interface IP (currently returns 127.0.0.1).
-3.  Implement real `weekdayRange`, `dateRange`, `timeRange` (currently stubs returning true).
-4.  Add Keyring integration for secure credential storage (instead of plain text config).
+1.  Add Keyring integration for secure credential storage (instead of plain text config).
