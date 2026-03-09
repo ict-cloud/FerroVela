@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Core async runtime - using only needed features instead of 'full'
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros", "full"] }
 bytes = "1"
 serde = { version = "1", features = ["derive"] }
 toml = "1.0"

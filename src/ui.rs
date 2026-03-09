@@ -13,7 +13,6 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
-use tokio::task::AbortHandle;
 
 // Global receiver for IPC commands
 pub static IPC_RECEIVER: OnceLock<Mutex<Option<mpsc::Receiver<ProxySignal>>>> = OnceLock::new();
@@ -108,7 +107,7 @@ pub struct ConfigEditor {
     pub status: String,
     // Service control
     pub service_status: ServiceStatus,
-    pub proxy_handle: Option<AbortHandle>,
+    pub proxy_handle: Option<tokio::sync::watch::Sender<bool>>,
     // Log view
     pub show_logs: bool,
     pub log_content: String,
@@ -368,7 +367,10 @@ impl ConfigEditor {
             let pac_path = config.proxy.pac_file.clone();
             let sender = self.signal_sender.clone();
 
-            let handle = tokio::spawn(async move {
+            let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+            self.proxy_handle = Some(shutdown_tx);
+
+            tokio::spawn(async move {
                 let pac_engine = if let Some(path) = pac_path {
                     info!("Loading PAC file from {}", path);
                     match PacEngine::new(&path).await {
@@ -382,18 +384,19 @@ impl ConfigEditor {
                     None
                 };
 
-                let proxy = Proxy::new(config.clone(), pac_engine, Some(sender));
-                if let Err(e) = proxy.run().await {
-                    error!("Proxy error: {}", e);
-                }
+                let proxy = Proxy::new(config.clone(), pac_engine, Some(sender), Some(shutdown_rx));
+                std::thread::spawn(move || {
+                    if let Err(e) = proxy.run() {
+                        error!("Proxy error: {}", e);
+                    }
+                });
             });
 
-            self.proxy_handle = Some(handle.abort_handle());
             self.service_status = ServiceStatus::Running;
             self.status = "Service Started".to_string();
         } else {
-            if let Some(handle) = self.proxy_handle.take() {
-                handle.abort();
+            if let Some(tx) = self.proxy_handle.take() {
+                let _ = tx.send(true);
             }
             self.service_status = ServiceStatus::Stopped;
             self.status = "Service Stopped".to_string();

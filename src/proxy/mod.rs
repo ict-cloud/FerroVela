@@ -9,6 +9,7 @@ use crate::config::Config;
 use crate::pac::PacEngine;
 
 pub mod http_utils;
+pub mod shutdown;
 
 pub const MAGIC_SHOW_PATH: &str = "/__ferrovela/show";
 pub const MAGIC_SHOW_REQUEST: &str =
@@ -24,6 +25,7 @@ pub struct Proxy {
     pac: Arc<Option<PacEngine>>,
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
     signal_sender: Option<Sender<ProxySignal>>,
+    shutdown_rx: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 impl Proxy {
@@ -31,6 +33,7 @@ impl Proxy {
         config: Arc<Config>,
         pac: Option<PacEngine>,
         signal_sender: Option<Sender<ProxySignal>>,
+        shutdown_rx: Option<tokio::sync::watch::Receiver<bool>>,
     ) -> Self {
         let authenticator = if let Some(upstream_conf) = &config.upstream {
             create_authenticator(upstream_conf).map(Arc::new)
@@ -43,10 +46,11 @@ impl Proxy {
             pac: Arc::new(pac),
             authenticator,
             signal_sender,
+            shutdown_rx,
         }
     }
 
-    pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let addr = format!("127.0.0.1:{}", self.config.proxy.port);
         info!("Listening on http://{}", addr);
 
@@ -66,7 +70,24 @@ impl Proxy {
 
         proxy_service.add_tcp(&addr);
         my_server.add_service(proxy_service);
-        my_server.run_forever();
+        #[cfg(unix)]
+        let run_args = pingora::server::RunArgs {
+            shutdown_signal: if let Some(rx) = &self.shutdown_rx {
+                Box::new(shutdown::WatchShutdownSignal {
+                    receiver: rx.clone(),
+                })
+            } else {
+                Box::new(shutdown::WatchShutdownSignal {
+                    receiver: tokio::sync::watch::channel(false).1,
+                })
+            },
+        };
+
+        #[cfg(windows)]
+        let run_args = pingora::server::RunArgs::default();
+
+        my_server.run(run_args);
+        Ok(())
     }
 
     #[allow(dead_code)]
