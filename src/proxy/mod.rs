@@ -185,8 +185,13 @@ impl ProxyHttp for FerroVelaProxy {
                 .trim_start_matches("http://")
                 .trim_start_matches("https://");
 
+            let mut resolved_addrs = tokio::net::lookup_host(proxy_addr)
+                .await
+                .map_err(|e| pingora::Error::because(pingora::ErrorType::ConnectError, "DNS resolution failed", e))?;
+            let sock_addr = resolved_addrs.next().ok_or_else(|| pingora::Error::explain(pingora::ErrorType::ConnectError, "No addresses found"))?;
+
             // Connect to upstream proxy
-            let peer = HttpPeer::new(proxy_addr, false, target.clone());
+            let peer = HttpPeer::new(sock_addr, false, target.clone());
             Ok(Box::new(peer))
         } else {
             // Direct connection
@@ -198,7 +203,13 @@ impl ProxyHttp for FerroVelaProxy {
                 .unwrap_or(80);
             let sni = host.to_string();
 
-            let peer = HttpPeer::new(target.clone(), port == 443, sni);
+            let target_with_port = format!("{}:{}", host, port);
+            let mut resolved_addrs = tokio::net::lookup_host(&target_with_port)
+                .await
+                .map_err(|e| pingora::Error::because(pingora::ErrorType::ConnectError, "DNS resolution failed", e))?;
+            let sock_addr = resolved_addrs.next().ok_or_else(|| pingora::Error::explain(pingora::ErrorType::ConnectError, "No addresses found"))?;
+
+            let peer = HttpPeer::new(sock_addr, port == 443, sni);
             Ok(Box::new(peer))
         }
     }
