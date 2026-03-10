@@ -1,6 +1,6 @@
 [package]
 name = "ferrovela"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -27,8 +27,8 @@ ntlmclient = "0.2.0"
 tokio-stream = "0.1.18"
 memchr = "2.8.0"
 glob = "0.3.3"
-pingora = { version = "0.8", features = ["proxy"] }
 async-trait = "0.1.89"
+g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.0", default-features = false, features = ["vendored-c-ares"] }
 
 [lib]
 name = "ferrovela"
@@ -71,3 +71,8 @@ path = "benches/request_bench.rs"
 name = "musli_vs_serde_bench"
 harness = false
 path = "benches/musli_vs_serde_bench.rs"
+
+[[bench]]
+name = "connect_bench_v2"
+harness = false
+path = "benches/connect_bench_v2.rs"

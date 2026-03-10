@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::{Context, Result};
 use base64::prelude::*;
 use libgssapi::context::{ClientCtx, CtxFlags};

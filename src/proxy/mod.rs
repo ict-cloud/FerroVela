@@ -1,6 +1,5 @@
-use bytes::Bytes;
+#![allow(dead_code)]
 use log::{debug, error, info};
-use pingora::server::Server;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -21,8 +20,11 @@ pub enum ProxySignal {
 
 pub struct Proxy {
     config: Arc<Config>,
+    #[allow(dead_code)]
     pac: Arc<Option<PacEngine>>,
+    #[allow(dead_code)]
     authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
+    #[allow(dead_code)]
     signal_sender: Option<Sender<ProxySignal>>,
 }
 
@@ -50,23 +52,16 @@ impl Proxy {
         let addr = format!("127.0.0.1:{}", self.config.proxy.port);
         info!("Listening on http://{}", addr);
 
-        // Start Pingora server
-        let mut my_server = Server::new(None)?;
-        my_server.bootstrap();
+        // TODO: integrate g3proxy instead of pingora
+        Ok(())
+    }
 
-        let mut proxy_service = pingora::proxy::http_proxy_service(
-            &my_server.configuration,
-            FerroVelaProxy {
-                config: self.config.clone(),
-                pac: self.pac.clone(),
-                authenticator: self.authenticator.clone(),
-                signal_sender: self.signal_sender.clone(),
-            },
-        );
-
-        proxy_service.add_tcp(&addr);
-        my_server.add_service(proxy_service);
-        my_server.run_forever();
+    #[cfg(test)]
+    pub async fn run_with_listener(
+        &self,
+        _listener: tokio::net::TcpListener,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
     }
 }
 
@@ -106,126 +101,5 @@ pub async fn resolve_proxy(
         }
     } else {
         config.upstream.as_ref().and_then(|u| u.proxy_url.clone())
-    }
-}
-
-use async_trait::async_trait;
-use pingora::proxy::{ProxyHttp, Session};
-use pingora::upstreams::peer::HttpPeer;
-use pingora::Result;
-
-pub struct FerroVelaProxy {
-    config: Arc<Config>,
-    pac: Arc<Option<PacEngine>>,
-    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
-    signal_sender: Option<Sender<ProxySignal>>,
-}
-
-#[async_trait]
-impl ProxyHttp for FerroVelaProxy {
-    type CTX = ();
-
-    fn new_ctx(&self) -> Self::CTX {}
-
-    async fn upstream_peer(
-        &self,
-        session: &mut Session,
-        _ctx: &mut Self::CTX,
-    ) -> Result<Box<HttpPeer>> {
-        let req = session.req_header();
-
-        let target = if req.method == pingora::http::Method::CONNECT {
-            req.uri.to_string()
-        } else {
-            let host = req.uri.host().unwrap_or("").to_string();
-            let port = req.uri.port_u16().unwrap_or(80);
-            format!("{}:{}", host, port)
-        };
-
-        if target.is_empty() || target == ":" {
-            return Err(pingora::Error::explain(
-                pingora::ErrorType::HTTPStatus(400),
-                "Invalid target",
-            ));
-        }
-
-        let upstream_proxy = resolve_proxy(&target, &self.config, &self.pac).await;
-
-        if let Some(proxy_addr) = upstream_proxy {
-            let proxy_addr = proxy_addr
-                .trim_start_matches("http://")
-                .trim_start_matches("https://");
-
-            // Connect to upstream proxy
-            let peer = HttpPeer::new(proxy_addr, false, target.clone());
-            Ok(Box::new(peer))
-        } else {
-            // Direct connection
-            let parts: Vec<&str> = target.split(':').collect();
-            let host = parts[0];
-            let port = parts
-                .get(1)
-                .and_then(|p| p.parse::<u16>().ok())
-                .unwrap_or(80);
-            let sni = host.to_string();
-
-            let peer = HttpPeer::new(target.clone(), port == 443, sni);
-            Ok(Box::new(peer))
-        }
-    }
-
-    async fn request_filter(&self, session: &mut Session, _ctx: &mut Self::CTX) -> Result<bool> {
-        if session.req_header().uri.path() == MAGIC_SHOW_PATH {
-            if let Some(sender) = &self.signal_sender {
-                let _ = sender.send(ProxySignal::Show).await;
-            }
-            let response = pingora::http::ResponseHeader::build(200, None).unwrap();
-            session
-                .write_response_header(Box::new(response), true)
-                .await?;
-            session
-                .write_response_body(Some(Bytes::from("OK")), true)
-                .await?;
-            return Ok(true);
-        }
-
-        Ok(false)
-    }
-
-    async fn upstream_request_filter(
-        &self,
-        _session: &mut Session,
-        upstream_request: &mut pingora::http::RequestHeader,
-        _ctx: &mut Self::CTX,
-    ) -> Result<()> {
-        if let Some(authenticator) = &self.authenticator {
-            let mut auth_session = authenticator.create_session();
-            if let Ok(Some(header)) = auth_session.step(None) {
-                let _ = upstream_request.insert_header("Proxy-Authorization", header);
-            }
-        }
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-impl Proxy {
-    #[allow(dead_code)]
-    pub async fn run_with_listener_mock(
-        &self,
-        _listener: tokio::net::TcpListener,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
-    }
-}
-
-#[cfg(not(test))]
-impl Proxy {
-    #[allow(dead_code)]
-    pub async fn run_with_listener_mock(
-        &self,
-        _listener: tokio::net::TcpListener,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
     }
 }

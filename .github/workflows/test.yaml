@@ -20,7 +20,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
       - uses: "actions-rs/toolchain@v1"
         with:
           profile: "minimal"
@@ -40,7 +40,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
       - uses: "actions-rs/toolchain@v1"
         with:
           profile: "minimal"
@@ -60,7 +60,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
 
       - uses: "actions-rs/toolchain@v1"
         with:
@@ -84,7 +84,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
 
       - uses: "actions-rs/toolchain@v1"
         with:
