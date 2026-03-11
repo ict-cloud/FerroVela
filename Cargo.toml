@@ -30,7 +30,7 @@ glob = "0.3.*"
 pingora = { version = "0.8", features = ["proxy"] }
 async-trait = "0.1.*"
 keyring = "3.6.*"
-g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares"] }
+g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.0", default-features = false, features = ["vendored-c-ares"] }
 
 [lib]
 name = "ferrovela"
