@@ -14,6 +14,7 @@ fn generate_config() -> Config {
             username: Some("proxy_user".to_string()),
             password: Some("super_secret_password".to_string()),
             domain: Some("corp.local".to_string()),
+            use_keyring: false,
             workstation: Some("WORKSTATION1".to_string()),
             proxy_url: Some("192.168.1.100:3128".to_string()),
         }),

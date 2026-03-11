@@ -98,6 +98,7 @@ pub struct ConfigEditor {
     pub upstream_auth_type: AuthType,
     pub upstream_username: String,
     pub upstream_password: String,
+    pub upstream_use_keyring: bool,
     pub upstream_domain: String,
     pub upstream_workstation: String,
     pub upstream_proxy_url: String,
@@ -130,6 +131,7 @@ pub enum Message {
     UpstreamDomainChanged(String),
     UpstreamWorkstationChanged(String),
     UpstreamProxyUrlChanged(String),
+    UpstreamUseKeyringToggled(bool),
     ExceptionsHostsChanged(String),
     ToggleService(bool),
     OpenLogs,
@@ -173,6 +175,11 @@ impl ConfigEditor {
                     .as_ref()
                     .and_then(|u| u.password.clone())
                     .unwrap_or_default(),
+                upstream_use_keyring: config
+                    .upstream
+                    .as_ref()
+                    .map(|u| u.use_keyring)
+                    .unwrap_or(false),
                 upstream_domain: config
                     .upstream
                     .as_ref()
@@ -228,11 +235,12 @@ impl ConfigEditor {
                 } else {
                     Some(self.upstream_username.trim().to_string())
                 },
-                password: if self.upstream_password.trim().is_empty() {
+                password: if self.upstream_password.trim().is_empty() || self.upstream_use_keyring {
                     None
                 } else {
                     Some(self.upstream_password.trim().to_string())
                 },
+                use_keyring: self.upstream_use_keyring,
                 domain: if self.upstream_domain.trim().is_empty() {
                     None
                 } else {
@@ -277,7 +285,38 @@ impl ConfigEditor {
     fn save_current_config(&mut self) {
         let config = self.build_config();
         match save_config(&self.path, &config) {
-            Ok(_) => self.status = "Saved successfully!".to_string(),
+            Ok(_) => {
+                self.status = "Saved successfully!".to_string();
+
+                // Save password to keyring if enabled
+                if self.upstream_use_keyring {
+                    if !self.upstream_password.trim().is_empty()
+                        && !self.upstream_username.trim().is_empty()
+                    {
+                        let entry = keyring::Entry::new("ferrovela", self.upstream_username.trim());
+                        if let Ok(entry) = entry {
+                            if let Err(e) = entry.set_password(self.upstream_password.trim()) {
+                                log::error!("Failed to save password to keyring: {}", e);
+                            } else {
+                                log::info!(
+                                    "Successfully saved password to keyring for user '{}'",
+                                    self.upstream_username.trim()
+                                );
+                            }
+                        } else {
+                            log::error!("Failed to create keyring entry");
+                        }
+                    }
+                } else if !self.upstream_username.trim().is_empty() {
+                    // If keyring is disabled, optionally we could clear the entry, but let's be safe.
+                    // It's better to just leave it be, or we can try to delete it.
+                    if let Ok(entry) =
+                        keyring::Entry::new("ferrovela", self.upstream_username.trim())
+                    {
+                        let _ = entry.delete_credential();
+                    }
+                }
+            }
             Err(e) => self.status = format!("Error saving: {}", e),
         }
     }
@@ -308,6 +347,7 @@ impl ConfigEditor {
             | Message::UpstreamAuthTypeChanged(_)
             | Message::UpstreamUsernameChanged(_)
             | Message::UpstreamPasswordChanged(_)
+            | Message::UpstreamUseKeyringToggled(_)
             | Message::UpstreamDomainChanged(_)
             | Message::UpstreamWorkstationChanged(_)
             | Message::UpstreamProxyUrlChanged(_)
@@ -344,6 +384,9 @@ impl ConfigEditor {
             }
             Message::UpstreamPasswordChanged(value) => {
                 self.upstream_password = value;
+            }
+            Message::UpstreamUseKeyringToggled(value) => {
+                self.upstream_use_keyring = value;
             }
             Message::UpstreamDomainChanged(value) => {
                 self.upstream_domain = value;
@@ -572,6 +615,11 @@ impl ConfigEditor {
                         text_input("Password", &self.upstream_password)
                             .on_input(Message::UpstreamPasswordChanged)
                             .secure(true)
+                    ),
+                    field_row(
+                        "Store password in system keyring:",
+                        iced::widget::Checkbox::new(self.upstream_use_keyring)
+                            .on_toggle(Message::UpstreamUseKeyringToggled)
                     ),
                     field_row(
                         "Domain:",

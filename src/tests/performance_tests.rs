@@ -57,6 +57,7 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
         auth_type: "none".to_string(),
         username: None,
         password: None,
+        use_keyring: false,
         domain: None,
         workstation: None,
         proxy_url: Some(format!("127.0.0.1:{}", upstream_port)),
