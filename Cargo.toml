@@ -23,12 +23,13 @@ base64 = "0.22"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 iced = { version = "0.14", features = ["tokio"] }
 libgssapi = { version = "0.9", default-features = false }
-ntlmclient = "0.2.0"
-tokio-stream = "0.1.18"
-memchr = "2.8.0"
-glob = "0.3.3"
-async-trait = "0.1.89"
-g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.0", default-features = false, features = ["vendored-c-ares"] }
+ntlmclient = "0.2.*"
+tokio-stream = "0.1.*"
+memchr = "2.8.*"
+glob = "0.3.*"
+async-trait = "0.1.*"
+g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares"] }
+keyring = "3.6.*"
 
 [lib]
 name = "ferrovela"
