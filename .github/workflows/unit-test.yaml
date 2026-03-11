@@ -19,7 +19,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
+          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable

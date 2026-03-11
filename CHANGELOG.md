@@ -1,14 +1,5 @@
 # Changelog
 
-## [0.3.0] - 
-
-### Added
-- more tests
-
-### Changed
-- g3proxy replaced pingora
-- minor improvements.
-
 ## [0.2.0] - 2026-03-07
 
 ### Added

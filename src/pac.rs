@@ -310,14 +310,13 @@ impl PacEngine {
                         error!("Failed to evaluate PAC script: {}", e);
                     }
 
-                    let func_name = JsString::from("FindProxyForURL");
-
                     while let Some(req) = rx.blocking_recv() {
                         let global_obj = context.global_object();
 
                         let result = (|| -> Result<String> {
+                            let func_name = JsString::from("FindProxyForURL");
                             let func = global_obj
-                                .get(func_name.clone(), &mut context)
+                                .get(func_name, &mut context)
                                 .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
 
                             if !func.is_callable() {
@@ -376,24 +375,7 @@ impl PacEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::{glob_match, register_pac_functions};
-    use boa_engine::{Context, Source};
-
-    #[test]
-    fn test_is_plain_host_name() {
-        let mut context = Context::default();
-        register_pac_functions(&mut context);
-
-        let res1 = context
-            .eval(Source::from_bytes("isPlainHostName('example.com')"))
-            .unwrap();
-        assert_eq!(res1.as_boolean(), Some(false));
-
-        let res2 = context
-            .eval(Source::from_bytes("isPlainHostName('localhost')"))
-            .unwrap();
-        assert_eq!(res2.as_boolean(), Some(true));
-    }
+    use super::glob_match;
 
     #[test]
     fn test_glob_match_cases() {

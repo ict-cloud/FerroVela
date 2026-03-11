@@ -56,24 +56,3 @@ fn test_ntlm_initialization() {
     // Verify minimal length or content?
     assert!(bytes.len() > 0);
 }
-
-#[test]
-fn test_ntlm_invalid_challenge() {
-    let auth = NtlmAuthenticator::new(
-        "user".into(),
-        "pass".into(),
-        "DOMAIN".into(),
-        "WORKSTATION".into(),
-    );
-    let mut session = auth.create_session();
-
-    // Step 1: Negotiate - this advances state to Challenge
-    let res1 = session.step(None);
-    assert!(res1.is_ok());
-
-    // Step 2: Provide an invalid challenge (e.g., Basic auth instead of NTLM)
-    let res2 = session.step(Some("Basic dXNlcjpwYXNz"));
-    assert!(res2.is_err());
-    let err_msg = res2.unwrap_err().to_string();
-    assert!(err_msg.contains("Invalid NTLM challenge header"));
-}
