@@ -80,7 +80,8 @@ impl ExceptionsConfig {
         if pattern == host {
             return true;
         }
-        if pattern.starts_with("*.") && host.ends_with(&pattern[2..]) {
+        // pattern[1..] strips the '*', leaving ".example.com", so only actual subdomains match
+        if pattern.starts_with("*.") && host.ends_with(&pattern[1..]) {
             return true;
         }
         false
@@ -133,13 +134,12 @@ mod tests {
         let exceptions = ExceptionsConfig {
             hosts: vec!["*.example.com".to_string()],
         };
-        // Matches because suffix matches
         assert!(exceptions.matches("sub.example.com"));
         assert!(exceptions.matches("deep.sub.example.com"));
 
-        // Edge case behavior: matches if ends with "example.com"
-        assert!(exceptions.matches("myexample.com"));
-        assert!(exceptions.matches("example.com"));
+        // Bare domain and suffix-only hosts must NOT match the wildcard
+        assert!(!exceptions.matches("example.com"));
+        assert!(!exceptions.matches("myexample.com"));
 
         assert!(!exceptions.matches("other.com"));
     }
@@ -153,7 +153,7 @@ mod tests {
         assert!(!exceptions.matches("sub.exact.com"));
 
         assert!(exceptions.matches("sub.wild.com"));
-        assert!(exceptions.matches("wild.com")); // matches suffix
+        assert!(!exceptions.matches("wild.com")); // bare domain does not match wildcard
 
         assert!(!exceptions.matches("other.com"));
     }

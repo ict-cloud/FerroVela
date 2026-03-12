@@ -1,4 +1,1 @@
-#[test]
-fn dummy_streaming_benchmark() {
-    assert!(true);
-}
+// TODO: implement streaming throughput benchmark once the proxy listener is wired up

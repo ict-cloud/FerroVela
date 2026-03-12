@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -23,7 +22,7 @@ pub struct Proxy {
     #[allow(dead_code)]
     pac: Arc<Option<PacEngine>>,
     #[allow(dead_code)]
-    authenticator: Option<Arc<Box<dyn UpstreamAuthenticator>>>,
+    authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
     #[allow(dead_code)]
     signal_sender: Option<Sender<ProxySignal>>,
 }
@@ -35,7 +34,7 @@ impl Proxy {
         signal_sender: Option<Sender<ProxySignal>>,
     ) -> Self {
         let authenticator = if let Some(upstream_conf) = &config.upstream {
-            create_authenticator(upstream_conf).map(Arc::new)
+            create_authenticator(upstream_conf).map(|b| -> Arc<dyn UpstreamAuthenticator> { Arc::from(b) })
         } else {
             None
         };
