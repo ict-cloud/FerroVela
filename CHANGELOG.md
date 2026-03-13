@@ -6,6 +6,7 @@
 - Fully functional proxy engine built on **g3proxy** (ByteDance): c-ares resolver, DirectFixed/ProxyHttp escaper, HttpProxy server on an OS-assigned internal port.
 - **Kerberos and NTLM auth tunnel** (`src/proxy/auth_tunnel.rs`): drives the full challenge-response handshake with the upstream proxy directly, with PAC/exceptions routing per connection.
 - Pre-processor listener owns the user-facing port, preserving the single-instance IPC (`/__ferrovela/show`) independently of g3proxy.
+- Add keyring support for storing credentials securely.
 
 ### Changed
 - Config serialisation switched from `serde`/TOML to **musli JSON** (`config.json`), removing the last obstacle to a fully static musl build.
