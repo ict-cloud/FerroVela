@@ -34,7 +34,8 @@ impl Proxy {
         signal_sender: Option<Sender<ProxySignal>>,
     ) -> Self {
         let authenticator = if let Some(upstream_conf) = &config.upstream {
-            create_authenticator(upstream_conf).map(|b| -> Arc<dyn UpstreamAuthenticator> { Arc::from(b) })
+            create_authenticator(upstream_conf)
+                .map(|b| -> Arc<dyn UpstreamAuthenticator> { Arc::from(b) })
         } else {
             None
         };

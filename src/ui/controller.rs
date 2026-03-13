@@ -11,7 +11,7 @@ use crate::config::{
 use crate::pac::PacEngine;
 use crate::proxy::{Proxy, ProxySignal};
 
-use super::model::{AuthType, ConfigEditor, IPC_RECEIVER, Message, ServiceStatus, Tab};
+use super::model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab, IPC_RECEIVER};
 
 impl ConfigEditor {
     pub fn new_args(path: String) -> (Self, Task<Message>) {

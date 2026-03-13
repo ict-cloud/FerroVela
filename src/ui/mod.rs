@@ -3,7 +3,7 @@ mod model;
 mod view;
 
 #[allow(unused_imports)] // items are part of the public API and used in tests
-pub use model::{AuthType, ConfigEditor, IPC_RECEIVER, Message, ServiceStatus, Tab};
+pub use model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab, IPC_RECEIVER};
 
 use iced::window;
 
