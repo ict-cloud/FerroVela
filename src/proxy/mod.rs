@@ -7,9 +7,9 @@ use crate::auth::{create_authenticator, UpstreamAuthenticator};
 use crate::config::Config;
 use crate::pac::PacEngine;
 
+pub mod auth_tunnel;
 pub mod http_utils;
 
-pub const MAGIC_SHOW_PATH: &str = "/__ferrovela/show";
 pub const MAGIC_SHOW_REQUEST: &str =
     "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
 
@@ -24,7 +24,6 @@ pub enum ProxySignal {
 pub struct Proxy {
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
-    #[allow(dead_code)]
     authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
     signal_sender: Option<Sender<ProxySignal>>,
 }
@@ -53,9 +52,8 @@ impl Proxy {
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listen_addr = format!("127.0.0.1:{}", self.config.proxy.port);
 
-        // Reserve an available port for g3proxy's internal listener before writing config.
-        // There is a small race window between drop and g3proxy binding, but on loopback
-        // this is negligible for a user application.
+        // Reserve an available port for g3proxy's internal listener.
+        // Brief race window between drop and g3proxy bind; negligible on loopback.
         let internal_port = {
             let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
             let port = probe.local_addr()?.port();
@@ -63,7 +61,7 @@ impl Proxy {
             port
         };
 
-        // Build g3proxy YAML config and write it to a temp file.
+        // Build and write g3proxy YAML config.
         let yaml = self.build_g3proxy_yaml(internal_port);
         let config_path = std::env::temp_dir().join("ferrovela_g3proxy.yaml");
         std::fs::write(&config_path, &yaml)?;
@@ -73,11 +71,11 @@ impl Proxy {
             internal_port
         );
 
-        // Point g3-daemon at our generated config file. This is a one-time global init.
+        // Initialise g3-daemon global config path (one-time per process).
         g3_daemon::opts::validate_and_set_config_file(&config_path, "g3proxy")
             .map_err(|e| format!("g3proxy config file init failed: {e}"))?;
 
-        // Parse the YAML config into g3proxy's global registries.
+        // Parse YAML into g3proxy's global registries.
         g3proxy::config::load().map_err(|e| format!("g3proxy config load failed: {e}"))?;
 
         // Spawn all sub-systems in dependency order.
@@ -100,9 +98,11 @@ impl Proxy {
 
         info!("g3proxy engine running on internal port {}", internal_port);
 
-        // Our pre-processor listener sits on the configured port and handles two cases:
-        //   1. Magic show request  → signal the UI and return 200 OK locally.
-        //   2. Everything else     → pipe raw bytes to/from the g3proxy internal port.
+        // Decide whether to use the auth tunnel for this proxy configuration.
+        // Kerberos and NTLM require a multi-step challenge-response that g3proxy's
+        // ProxyHttp escaper does not support; we handle those connections ourselves.
+        let use_auth_tunnel = self.needs_auth_tunnel();
+
         let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
         info!("Listening on http://{}", listen_addr);
 
@@ -111,8 +111,20 @@ impl Proxy {
                 Ok((stream, peer)) => {
                     debug!("accepted connection from {}", peer);
                     let signal_sender = self.signal_sender.clone();
+                    let authenticator = self.authenticator.clone();
+                    let config = Arc::clone(&self.config);
+                    let pac = Arc::clone(&self.pac);
+
                     tokio::spawn(async move {
-                        handle_connection(stream, internal_port, signal_sender).await;
+                        handle_connection(
+                            stream,
+                            internal_port,
+                            signal_sender,
+                            if use_auth_tunnel { authenticator } else { None },
+                            config,
+                            pac,
+                        )
+                        .await;
                     });
                 }
                 Err(e) => {
@@ -120,6 +132,20 @@ impl Proxy {
                 }
             }
         }
+    }
+
+    /// Returns `true` when the configured auth type requires the pre-processor
+    /// to drive the challenge-response handshake itself (Kerberos, NTLM).
+    fn needs_auth_tunnel(&self) -> bool {
+        self.config
+            .upstream
+            .as_ref()
+            .map(|u| {
+                matches!(u.auth_type.as_str(), "kerberos" | "mock_kerberos" | "ntlm")
+                    && u.proxy_url.is_some()
+                    && self.authenticator.is_some()
+            })
+            .unwrap_or(false)
     }
 
     #[cfg(test)]
@@ -130,7 +156,7 @@ impl Proxy {
         Ok(())
     }
 
-    /// Generates a minimal g3proxy YAML configuration.
+    /// Generates a minimal g3proxy YAML configuration from FerroVela's config.
     fn build_g3proxy_yaml(&self, internal_port: u16) -> String {
         let escaper_yaml = self.build_escaper_yaml();
 
@@ -159,7 +185,6 @@ server:
             return Self::direct_fixed_yaml();
         };
 
-        // Parse proxy_url (expected: "host:port" or "http://host:port")
         let addr = proxy_url
             .trim_start_matches("http://")
             .trim_start_matches("https://");
@@ -178,21 +203,17 @@ server:
 "#,
                 )
             }
-            "ntlm" | "kerberos" | "mock_kerberos" => {
-                // g3proxy's ProxyHttp escaper only supports Basic auth natively.
-                // For NTLM/Kerberos we forward without pre-auth and log the limitation.
+            "kerberos" | "mock_kerberos" | "ntlm" => {
+                // The auth tunnel in this process handles Kerberos/NTLM CONNECT traffic.
+                // g3proxy is configured with DirectFixed so it only handles connections
+                // that the pre-processor explicitly forwards to it (direct/exception paths
+                // and plain-HTTP fallback).
                 warn!(
-                    "auth_type '{}' is not natively supported by the g3proxy escaper; \
-                     connections to authenticated upstreams may be rejected",
+                    "auth_type '{}': Kerberos/NTLM CONNECT tunnels are handled by the \
+                     FerroVela pre-processor; g3proxy uses DirectFixed for direct paths",
                     upstream.auth_type
                 );
-                format!(
-                    r#"  - name: default
-    type: ProxyHttp
-    proxy_addr: "{addr}"
-    resolver: default
-"#,
-                )
+                Self::direct_fixed_yaml()
             }
             _ => format!(
                 r#"  - name: default
@@ -213,19 +234,24 @@ server:
     }
 }
 
-/// Handles a single inbound TCP connection.
+// ─── connection dispatcher ────────────────────────────────────────────────────
+
+/// Routes a single inbound client connection:
 ///
-/// Peeks at the first bytes:
-/// - Magic show request → respond 200 OK + forward ProxySignal::Show.
-/// - Anything else      → splice bidirectionally with g3proxy's internal port.
+/// 1. Magic show request   → respond 200 OK + send `ProxySignal::Show`.
+/// 2. Auth tunnel enabled  → [`auth_tunnel::handle_authenticated_tunnel`].
+/// 3. Default              → splice directly to g3proxy's internal port.
 async fn handle_connection(
     mut client: tokio::net::TcpStream,
     internal_port: u16,
     signal_sender: Option<Sender<ProxySignal>>,
+    authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
+    config: Arc<Config>,
+    pac: Arc<Option<PacEngine>>,
 ) {
     let magic = MAGIC_SHOW_REQUEST.as_bytes();
 
-    // Peek without consuming.
+    // Peek without consuming — cheap way to detect the IPC magic request.
     let mut peek_buf = vec![0u8; magic.len()];
     let n = match client.peek(&mut peek_buf).await {
         Ok(n) => n,
@@ -236,7 +262,7 @@ async fn handle_connection(
     };
 
     if n == magic.len() && peek_buf == magic {
-        // Consume the magic request from the socket.
+        // Consume the magic bytes.
         let mut discard = vec![0u8; magic.len()];
         let _ = client.read_exact(&mut discard).await;
 
@@ -245,12 +271,18 @@ async fn handle_connection(
                 debug!("signal send error: {}", e);
             }
         }
-
         let _ = client.write_all(MAGIC_SHOW_RESPONSE).await;
         return;
     }
 
-    // Forward to g3proxy.
+    // Kerberos / NTLM: auth tunnel handler reads the request and drives the
+    // challenge-response handshake with the upstream proxy itself.
+    if let Some(auth) = authenticator {
+        auth_tunnel::handle_authenticated_tunnel(client, internal_port, auth, config, pac).await;
+        return;
+    }
+
+    // Default: forward raw bytes to g3proxy.
     let upstream_addr = format!("127.0.0.1:{}", internal_port);
     let mut upstream = match tokio::net::TcpStream::connect(&upstream_addr).await {
         Ok(s) => s,
@@ -261,14 +293,12 @@ async fn handle_connection(
     };
 
     match tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
-        Ok((down, up)) => {
-            debug!("connection closed: {} bytes down, {} bytes up", down, up);
-        }
-        Err(e) => {
-            debug!("splice error: {}", e);
-        }
+        Ok((down, up)) => debug!("connection closed ({} down, {} up bytes)", down, up),
+        Err(e) => debug!("splice error: {}", e),
     }
 }
+
+// ─── proxy resolution (PAC / static config) ───────────────────────────────────
 
 pub async fn resolve_proxy(
     target: &str,
