@@ -1690,6 +1690,7 @@ dependencies = [
  "bytes",
  "clap",
  "criterion",
+ "g3-daemon",
  "g3proxy",
  "glob",
  "iced",
