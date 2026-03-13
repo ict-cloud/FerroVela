@@ -1,4 +1,1 @@
-#[test]
-fn dummy_main_test() {
-    assert!(true);
-}
+// TODO: implement main entry-point tests

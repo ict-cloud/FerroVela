@@ -1,4 +1,1 @@
-#[test]
-fn dummy_http_proxy_test() {
-    assert!(true);
-}
+// TODO: implement HTTP proxy tests once the proxy listener is wired up

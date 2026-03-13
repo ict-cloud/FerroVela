@@ -1,18 +1,16 @@
 [package]
 name = "ferrovela"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 
 [dependencies]
 # Core async runtime - using only needed features instead of 'full'
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
 bytes = "1"
-serde = { version = "1", features = ["derive"] }
-toml = "1.0"
 log = "0.4"
 anyhow = "1"
 url = "2"
-musli = { version = "0.0.149", features = ["serde", "alloc", "storage"] }
+musli = { version = "0.0.149", features = ["alloc", "storage", "json"] }
 # For PAC file execution
 boa_engine = "0.21"
 
@@ -29,6 +27,7 @@ memchr = "2.8.*"
 glob = "0.3.*"
 async-trait = "0.1.*"
 g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares"] }
+g3-daemon = { git = "https://github.com/bytedance/g3.git", version = "0.4.*", default-features = false }
 keyring = "3.6.*"
 
 [lib]

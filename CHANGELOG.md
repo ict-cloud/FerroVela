@@ -1,6 +1,21 @@
 # Changelog
 
-## [0.3.0] - 
+## [0.3.1] - 2026-03-13
+
+### Added
+- Fully functional proxy engine built on **g3proxy** (ByteDance): c-ares resolver, DirectFixed/ProxyHttp escaper, HttpProxy server on an OS-assigned internal port.
+- **Kerberos and NTLM auth tunnel** (`src/proxy/auth_tunnel.rs`): drives the full challenge-response handshake with the upstream proxy directly, with PAC/exceptions routing per connection.
+- Pre-processor listener owns the user-facing port, preserving the single-instance IPC (`/__ferrovela/show`) independently of g3proxy.
+- Add keyring support for storing credentials securely.
+
+### Changed
+- Config serialisation switched from `serde`/TOML to **musli JSON** (`config.json`), removing the last obstacle to a fully static musl build.
+- `src/ui.rs` split into `ui/mod.rs`, `ui/model.rs`, `ui/view.rs`, `ui/controller.rs`.
+
+### Removed
+- `serde`, `serde_json`, `toml` dependencies.
+
+## [0.3.0] -
 
 ### Added
 - more tests

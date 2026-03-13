@@ -10,7 +10,7 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 - **Corporate Authentication**: Supports Basic, NTLM, and Kerberos authentication for upstream proxies.
 - **Developer Friendly**: 
     - Easy debugging with detailed logging.
-    - Simple configuration via a TOML file.
+    - Simple configuration via a JSON file.
 
 ## Configuration
 
@@ -30,65 +30,75 @@ FerroVela supports multiple authentication methods for upstream proxies:
 #### NTLM
 
 To use NTLM authentication:
-1. Set `auth_type = "ntlm"` in `config.toml`.
+1. Set `"auth_type": "ntlm"` in `config.json`.
 2. Provide `username`, `password`, `domain`, and `workstation`.
 
-```toml
-[upstream]
-auth_type = "ntlm"
-username = "user"
-password = "password"
-domain = "CORP"
-workstation = "MYPC"
-proxy_url = "http://proxy.corp.com:8080"
+```json
+{
+  "upstream": {
+    "auth_type": "ntlm",
+    "username": "user",
+    "password": "password",
+    "domain": "CORP",
+    "workstation": "MYPC",
+    "proxy_url": "http://proxy.corp.com:8080"
+  }
+}
 ```
 
 #### Kerberos
 
 To use Kerberos authentication:
 1. Ensure your machine is joined to the domain or you have a valid Kerberos ticket (obtainable via `kinit`).
-2. Set `auth_type = "kerberos"` in `config.toml`.
+2. Set `"auth_type": "kerberos"` in `config.json`.
 3. FerroVela will automatically use the cached credentials (TGT) to authenticate with the upstream proxy using SPNEGO.
 
-```toml
-[upstream]
-auth_type = "kerberos"
-proxy_url = "http://proxy.corp.com:8080"
-# username/password/domain are ignored for Kerberos (uses system ticket)
+```json
+{
+  "upstream": {
+    "auth_type": "kerberos",
+    "proxy_url": "http://proxy.corp.com:8080"
+  }
+}
 ```
 
 #### Basic
 
 To use Basic authentication:
 
-```toml
-[upstream]
-auth_type = "basic"
-username = "user"
-password = "password"
-proxy_url = "http://proxy.corp.com:8080"
+```json
+{
+  "upstream": {
+    "auth_type": "basic",
+    "username": "user",
+    "password": "password",
+    "proxy_url": "http://proxy.corp.com:8080"
+  }
+}
 ```
 
 ### Manual Configuration
 
-Configuration can also be manually managed through a `config.toml` file.
+Configuration can also be manually managed through a `config.json` file.
 
-```toml
-[proxy]
-port = 3128
-pac_file = "http://wpad/wpad.dat" # or local path
-
-[upstream]
-auth_type = "ntlm" # or "basic", "kerberos", "none"
-username = "user"
-password = "password"
-domain = "CORP" # Required for NTLM
-workstation = "WORKSTATION" # Optional for NTLM
-proxy_url = "http://upstream:8080"
-
-[exceptions]
-# bypass upstream proxy for these
-hosts = ["localhost", "127.0.0.1", "*.local"]
+```json
+{
+  "proxy": {
+    "port": 3128,
+    "pac_file": "http://wpad/wpad.dat"
+  },
+  "upstream": {
+    "auth_type": "ntlm",
+    "username": "user",
+    "password": "password",
+    "domain": "CORP",
+    "workstation": "WORKSTATION",
+    "proxy_url": "http://upstream:8080"
+  },
+  "exceptions": {
+    "hosts": ["localhost", "127.0.0.1", "*.local"]
+  }
+}
 ```
 
 ## Building and Running
@@ -129,7 +139,7 @@ Requests Per Second (RPS): 6248.71
 
 - `pingora`: For proxying and low-level HTTP handling.
 - `tokio`: Asynchronous runtime.
-- `musli`/`serde`/`toml`: Configuration parsing and serialization.
+- `musli`: Configuration parsing and serialization (JSON format).
 - `boa_engine`: Pure Rust JavaScript engine for PAC file evaluation.
 - `reqwest`: HTTP client for remote PAC file fetching (DIRECT, no-proxy).
 - `iced`: For the graphical user interface.
@@ -152,7 +162,7 @@ To run FerroVela as a background service on MacOS using `launchd`, you can use t
     This script will:
     -   Build the release binary.
     -   Install the binary to `~/.local/bin/ferrovela`.
-    -   Install the configuration to `~/.config/ferrovela/config.toml` (if not already present).
+    -   Install the configuration to `~/.config/ferrovela/config.json` (if not already present).
     -   Create and load a `launchd` plist at `~/Library/LaunchAgents/com.ferrovela.plist`.
 
 2.  **Manage the service**:

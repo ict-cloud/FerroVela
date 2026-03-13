@@ -41,7 +41,7 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
     -   **Modular Design**: Logic is split into `connect.rs` (HTTPS tunneling) and `nonconnect.rs` (standard HTTP proxying).
     -   **HTTPS/Tunneling**: Implements the `CONNECT` method to create TCP tunnels to target servers or upstream proxies.
     -   **Standard HTTP**: Implements standard HTTP forwarding (GET, POST, etc.) for non-SSL traffic.
-    -   **Upstream Chaining**: Can forward traffic to a parent proxy defined in `config.toml` or returned by the PAC script.
+    -   **Upstream Chaining**: Can forward traffic to a parent proxy defined in `config.json` or returned by the PAC script.
     -   **Authentication**: Supports **Basic**, **NTLM**, and **Kerberos** (Negotiate) authentication for upstream proxies.
 
 2.  **Authentication (`src/auth/`)**:
@@ -74,8 +74,8 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
         -   `timeRange(...)`: *Stub* (returns true).
 
 4.  **Configuration (`src/config.rs`)**:
-    -   Managed via `config.toml`.
-    -   Parsed using `serde` and `toml`.
+    -   Managed via `config.json`.
+    -   Parsed using `musli` (JSON format).
     -   Supports defining:
         -   Local listening port.
         -   PAC file location (local path or HTTP URL).
@@ -84,9 +84,9 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
 
 5.  **User Interface (`src/ui.rs`)**:
     -   Built using **Iced** (`iced`) for a cross-platform GUI.
-    -   Provides a form-based editor for `config.toml`.
+    -   Provides a form-based editor for `config.json`.
     -   Launched via the `--ui` command-line flag.
-    -   Synchronous save to disk using `serde` and `toml`.
+    -   Synchronous save to disk using `musli` (JSON format).
 
 ## Current Status & Capabilities
 
@@ -112,25 +112,28 @@ cargo build --release
 
 ### Run
 ```bash
-./target/release/ferrovela --config config.toml
+./target/release/ferrovela --config config.json
 ```
 
 ### Configuration Example
-```toml
-[proxy]
-port = 3128
-pac_file = "http://wpad/wpad.dat" 
-
-[upstream]
-auth_type = "ntlm"
-username = "user"
-password = "password"
-domain = "CORP"
-workstation = "MYPC"
-proxy_url = "10.0.0.1:3128"
-
-[exceptions]
-hosts = ["localhost", "127.0.0.1", "*.internal"]
+```json
+{
+  "proxy": {
+    "port": 3128,
+    "pac_file": "http://wpad/wpad.dat"
+  },
+  "upstream": {
+    "auth_type": "ntlm",
+    "username": "user",
+    "password": "password",
+    "domain": "CORP",
+    "workstation": "MYPC",
+    "proxy_url": "10.0.0.1:3128"
+  },
+  "exceptions": {
+    "hosts": ["localhost", "127.0.0.1", "*.internal"]
+  }
+}
 ```
 
 ## Developer Notes
@@ -138,7 +141,7 @@ hosts = ["localhost", "127.0.0.1", "*.internal"]
 -   **Boa & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local Boa engine. Any new PAC functions must be registered inside the spawned thread closure in `src/pac.rs`. Worker threads use `thread::Builder` with 8 MB stack size.
 -   **PAC Fetch**: Remote PAC files are fetched with `reqwest::Client::builder().no_proxy()` to ensure DIRECT connections.
 -   **Error Handling**: The application uses `anyhow` for error propagation and `log` for observability.
--   **Security**: Credentials in `config.toml` are read as plain text.
+-   **Security**: Credentials in `config.json` are read as plain text.
 
 ## Authentication Implementation
 

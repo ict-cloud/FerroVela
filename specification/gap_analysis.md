@@ -7,7 +7,7 @@ This document outlines the critical differences between the target application "
 | Feature | Preproxy (Target) | FerroVela (Current) | Gap Severity |
 | :--- | :--- | :--- | :--- |
 | **NTLM Authentication** | Fully supported for upstream proxies. | **Missing**. UI option exists but backend logic is unimplemented. | **Critical** |
-| **Keychain Integration** | Reads credentials securely from macOS Keychain. | Credentials stored in plain text `config.toml` (Basic) or relies on system TGT (Kerberos). | **High** |
+| **Keychain Integration** | Reads credentials securely from macOS Keychain. | Credentials stored in plain text `config.json` (Basic) or relies on system TGT (Kerberos). | **High** |
 | **IPv6 Support** | Listens on IPv6 loopback. | Listens only on IPv4 (`127.0.0.1`). | Medium |
 | **Exception Logic** | Supports domains, IPs, and glob patterns. | Supports only exact match and simple `*.domain` wildcards. | Medium |
 | **PAC Fallback** | Falls back to DIRECT connection if PAC fails. | Falls back to configured upstream proxy (if any). | Low |
@@ -30,7 +30,7 @@ The most critical missing feature is **NTLM Authentication**. Without this, the 
 **Plan:**
 1.  Add `security-framework` dependency.
 2.  Implement logic to read/write credentials to Keychain.
-3.  Update `config.toml` to support a "Keychain" source or simply omit password fields.
+3.  Update `config.json` to support a "Keychain" source or simply omit password fields.
 
 ### Phase 3: Network Robustness (Medium Priority)
 **IPv6 Support** and **Advanced Exceptions**.

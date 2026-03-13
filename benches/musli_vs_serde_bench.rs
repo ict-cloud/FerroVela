@@ -29,28 +29,28 @@ fn generate_config() -> Config {
     }
 }
 
-fn bench_serde_serialization(c: &mut Criterion) {
+fn bench_musli_json_serialization(c: &mut Criterion) {
     let config = generate_config();
-    c.bench_function("serde serialize toml", |b| {
+    c.bench_function("musli serialize json", |b| {
         b.iter(|| {
-            let s = toml::to_string(black_box(&config)).unwrap();
-            black_box(s);
+            let bytes = musli::json::to_vec(black_box(&config)).unwrap();
+            black_box(bytes);
         })
     });
 }
 
-fn bench_serde_deserialization(c: &mut Criterion) {
+fn bench_musli_json_deserialization(c: &mut Criterion) {
     let config = generate_config();
-    let toml_str = toml::to_string(&config).unwrap();
-    c.bench_function("serde deserialize toml", |b| {
+    let bytes = musli::json::to_vec(&config).unwrap();
+    c.bench_function("musli deserialize json", |b| {
         b.iter(|| {
-            let c: Config = toml::from_str(black_box(&toml_str)).unwrap();
+            let c: Config = musli::json::from_slice(black_box(bytes.as_slice())).unwrap();
             black_box(c);
         })
     });
 }
 
-fn bench_musli_serialization(c: &mut Criterion) {
+fn bench_musli_storage_serialization(c: &mut Criterion) {
     let config = generate_config();
     c.bench_function("musli serialize binary (storage)", |b| {
         b.iter(|| {
@@ -60,7 +60,7 @@ fn bench_musli_serialization(c: &mut Criterion) {
     });
 }
 
-fn bench_musli_deserialization(c: &mut Criterion) {
+fn bench_musli_storage_deserialization(c: &mut Criterion) {
     let config = generate_config();
     let bytes = musli::storage::to_vec(&config).unwrap();
     c.bench_function("musli deserialize binary (storage)", |b| {
@@ -73,9 +73,9 @@ fn bench_musli_deserialization(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_serde_serialization,
-    bench_serde_deserialization,
-    bench_musli_serialization,
-    bench_musli_deserialization
+    bench_musli_json_serialization,
+    bench_musli_json_deserialization,
+    bench_musli_storage_serialization,
+    bench_musli_storage_deserialization
 );
 criterion_main!(benches);
