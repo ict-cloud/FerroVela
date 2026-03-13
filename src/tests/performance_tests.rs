@@ -57,6 +57,7 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
         auth_type: "none".to_string(),
         username: None,
         password: None,
+        use_keyring: false,
         domain: None,
         workstation: None,
         proxy_url: Some(format!("127.0.0.1:{}", upstream_port)),
@@ -81,7 +82,7 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "perfomance test failing"]
+#[ignore = "performance test failing: proxy run() is not yet implemented"]
 async fn test_proxy_throughput() {
     let target_port = start_performance_target_server().await;
     let proxy_port = start_performance_proxy(target_port).await;

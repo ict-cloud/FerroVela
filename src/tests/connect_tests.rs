@@ -1,4 +1,1 @@
-#[test]
-fn dummy_connect_test() {
-    assert!(true);
-}
+// TODO: implement connection-level tests once the proxy listener is wired up
