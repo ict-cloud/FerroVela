@@ -1,12 +1,12 @@
 # Keyring Integration Specification
 
 ## Overview
-Currently, FerroVela stores upstream proxy passwords as plaintext in the `config.toml` file. This specification details the integration of the operating system's native keychain (e.g., macOS Keychain, Windows Credential Manager, Secret Service on Linux) to securely store and retrieve these passwords.
+Currently, FerroVela stores upstream proxy passwords as plaintext in the `config.json` file. This specification details the integration of the operating system's native keychain (e.g., macOS Keychain, Windows Credential Manager, Secret Service on Linux) to securely store and retrieve these passwords.
 
 ## Design Changes
 
 ### 1. Configuration Changes (`src/config.rs`)
-* Add a `use_keyring` boolean flag to the `UpstreamConfig` struct to indicate whether the password should be fetched from the system keychain instead of the TOML file.
+* Add a `use_keyring` boolean flag to the `UpstreamConfig` struct to indicate whether the password should be fetched from the system keychain instead of the config file.
 
 ### 2. Authentication Logic (`src/auth/mod.rs`)
 * When initializing authenticators (e.g., Basic, NTLM), the system will check the `use_keyring` flag.
@@ -15,8 +15,8 @@ Currently, FerroVela stores upstream proxy passwords as plaintext in the `config
 
 ### 3. User Interface (`src/ui.rs`)
 * Add a "Store password in system keyring" toggle in the Upstream Settings view.
-* When this toggle is active, any entered password will be securely saved to the OS keychain instead of being written to `config.toml`. The `password` field in `config.toml` will be cleared or omitted to prevent plaintext storage.
-* If the toggle is deactivated, the system will revert to storing the password in the TOML file, and ideally, the keychain entry will be removed to maintain hygiene.
+* When this toggle is active, any entered password will be securely saved to the OS keychain instead of being written to `config.json`. The `password` field in `config.json` will be cleared or omitted to prevent plaintext storage.
+* If the toggle is deactivated, the system will revert to storing the password in the config file, and ideally, the keychain entry will be removed to maintain hygiene.
 
 ## Dependencies
 * Add the `keyring` crate to `Cargo.toml`.

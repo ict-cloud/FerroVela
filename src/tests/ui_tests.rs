@@ -44,8 +44,8 @@ mod tests {
 
         // Verify file content
         let content = fs::read_to_string(&path).expect("Failed to read config file");
-        assert!(content.contains("port = 1234"));
-        assert!(content.contains("username = \"testuser\""));
+        assert!(content.contains("1234"));
+        assert!(content.contains("testuser"));
         assert!(editor.status.contains("Saved successfully"));
     }
 }
