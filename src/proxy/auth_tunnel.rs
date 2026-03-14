@@ -31,17 +31,25 @@ const MAX_HEADER_BYTES: usize = 64 * 1024;
 
 /// Read HTTP headers from `stream` until `\r\n\r\n`, returning the raw string
 /// (including the terminator).  Does **not** read any body bytes.
+///
+/// Reads in chunks (up to 4 KiB) instead of byte-at-a-time to minimise
+/// syscall overhead.  In the CONNECT handshake context, each HTTP message
+/// arrives as a single write from the peer, so `read()` will return the
+/// complete headers without over-reading into tunnel payload.
 pub async fn read_http_headers(
     stream: &mut TcpStream,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mut buf = Vec::with_capacity(1024);
-    let mut byte = [0u8; 1];
+    let mut chunk = [0u8; 4096];
 
     loop {
-        stream.read_exact(&mut byte).await?;
-        buf.push(byte[0]);
+        let n = stream.read(&mut chunk).await?;
+        if n == 0 {
+            return Err("connection closed before end of headers".into());
+        }
+        buf.extend_from_slice(&chunk[..n]);
 
-        if buf.ends_with(b"\r\n\r\n") {
+        if memchr::memmem::find(&buf, b"\r\n\r\n").is_some() {
             break;
         }
         if buf.len() > MAX_HEADER_BYTES {
@@ -151,6 +159,7 @@ pub async fn perform_authenticated_connect(
 ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
     let mut session = authenticator.create_session();
     let mut upstream = TcpStream::connect(upstream_proxy).await?;
+    let _ = upstream.set_nodelay(true);
 
     // ── initial attempt without auth ─────────────────────────────────────
     send_connect(&mut upstream, target, None).await?;
@@ -262,6 +271,7 @@ pub async fn handle_authenticated_tunnel(
                 // ── direct CONNECT (exception or no upstream) ────────────
                 match TcpStream::connect(&target).await {
                     Ok(mut upstream) => {
+                        let _ = upstream.set_nodelay(true);
                         let _ = client
                             .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
                             .await;
@@ -291,7 +301,10 @@ pub async fn handle_authenticated_tunnel(
 async fn forward_buffered_to_g3proxy(client: &mut TcpStream, internal_port: u16, buffered: &[u8]) {
     let addr = format!("127.0.0.1:{internal_port}");
     let mut upstream = match TcpStream::connect(&addr).await {
-        Ok(s) => s,
+        Ok(s) => {
+            let _ = s.set_nodelay(true);
+            s
+        }
         Err(e) => {
             error!("connect to g3proxy at {}: {}", addr, e);
             return;

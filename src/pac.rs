@@ -283,10 +283,12 @@ impl PacEngine {
             fs::read_to_string(pac_url_or_path).context("Failed to read PAC file")?
         };
 
-        // Determine number of workers based on available cores (fallback to 4)
+        // PAC evaluation is quick (sub-millisecond) so a small pool suffices.
+        // Cap at 4 workers to avoid wasting memory on 8 MB stacks (one per core
+        // would be 128 MB on a 16-core machine sitting idle).
         let num_workers = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4);
+            .map(|n| n.get().min(4))
+            .unwrap_or(2);
 
         let mut senders = Vec::with_capacity(num_workers);
 

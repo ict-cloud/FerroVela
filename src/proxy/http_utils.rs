@@ -17,14 +17,13 @@ pub fn parse_content_length(headers: &str) -> usize {
 }
 
 pub fn find_header_value(headers: &str, key: &str) -> Option<String> {
-    let key_lower = key.to_lowercase();
+    let key_len = key.len();
     for line in headers.lines() {
-        let line_lower = line.to_lowercase();
-        if line_lower.starts_with(&format!("{}:", key_lower)) {
-            // We need original case value, so we find split index in original line
-            if let Some(idx) = line.find(':') {
-                return Some(line[idx + 1..].trim().to_string());
-            }
+        if line.len() > key_len
+            && line.as_bytes()[key_len] == b':'
+            && line[..key_len].eq_ignore_ascii_case(key)
+        {
+            return Some(line[key_len + 1..].trim().to_string());
         }
     }
     None
