@@ -110,6 +110,7 @@ impl Proxy {
             match listener.accept().await {
                 Ok((stream, peer)) => {
                     debug!("accepted connection from {}", peer);
+                    let _ = stream.set_nodelay(true);
                     let signal_sender = self.signal_sender.clone();
                     let authenticator = self.authenticator.clone();
                     let config = Arc::clone(&self.config);
@@ -249,10 +250,11 @@ async fn handle_connection(
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
 ) {
+    const MAGIC_LEN: usize = MAGIC_SHOW_REQUEST.len();
     let magic = MAGIC_SHOW_REQUEST.as_bytes();
 
     // Peek without consuming — cheap way to detect the IPC magic request.
-    let mut peek_buf = vec![0u8; magic.len()];
+    let mut peek_buf = [0u8; MAGIC_LEN];
     let n = match client.peek(&mut peek_buf).await {
         Ok(n) => n,
         Err(e) => {
@@ -261,9 +263,9 @@ async fn handle_connection(
         }
     };
 
-    if n == magic.len() && peek_buf == magic {
+    if n == MAGIC_LEN && peek_buf == magic {
         // Consume the magic bytes.
-        let mut discard = vec![0u8; magic.len()];
+        let mut discard = [0u8; MAGIC_LEN];
         let _ = client.read_exact(&mut discard).await;
 
         if let Some(sender) = signal_sender {
@@ -285,7 +287,10 @@ async fn handle_connection(
     // Default: forward raw bytes to g3proxy.
     let upstream_addr = format!("127.0.0.1:{}", internal_port);
     let mut upstream = match tokio::net::TcpStream::connect(&upstream_addr).await {
-        Ok(s) => s,
+        Ok(s) => {
+            let _ = s.set_nodelay(true);
+            s
+        }
         Err(e) => {
             error!("failed to connect to g3proxy at {}: {}", upstream_addr, e);
             return;
