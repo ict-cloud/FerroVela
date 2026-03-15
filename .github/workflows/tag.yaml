@@ -1,0 +1,32 @@
+name: "Tag"
+
+on:
+  push:
+    branches:
+      - "master"
+
+jobs:
+  create-tag:
+    name: "Create tag"
+    runs-on: "ubuntu-latest"
+    permissions:
+      contents: "write"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version from Cargo.toml
+        id: get-tag
+        run: |
+          echo PKG_VERSION=$(awk -F '"' '/^version/ {print $2; exit}' Cargo.toml) >> $GITHUB_OUTPUT
+
+      - name: Create and push tag (if not exists)
+        run: |
+          TAG="v${{ steps.get-tag.outputs.PKG_VERSION }}"
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "Tag $TAG already exists, skipping."
+          else
+            git tag $TAG
+            git push origin $TAG
+          fi

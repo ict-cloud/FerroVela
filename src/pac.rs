@@ -1,8 +1,8 @@
 use anyhow::{Context as AnyhowContext, Result};
-use boa_engine::string::JsString;
-use boa_engine::{Context, JsValue, NativeFunction, Source};
 use glob::Pattern;
 use log::error;
+use rquickjs::function::Rest;
+use rquickjs::{Context, Function, Runtime};
 use std::fs;
 use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -45,220 +45,121 @@ fn glob_match(pattern: &str, text: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn register_pac_functions(context: &mut Context) {
-    let _ = context.register_global_callable(
-        JsString::from("dnsResolve"),
-        1,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let host = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            Ok(JsValue::from(JsString::from(host)))
-        }),
-    );
+fn register_pac_functions(ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
+    let globals = ctx.globals();
 
-    let _ = context.register_global_callable(
-        JsString::from("myIpAddress"),
-        0,
-        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(JsString::from("127.0.0.1")))),
-    );
+    globals.set(
+        "dnsResolve",
+        Function::new(ctx.clone(), |host: String| -> String { host })?,
+    )?;
 
-    let _ = context.register_global_callable(
-        JsString::from("shExpMatch"),
-        2,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let str_val = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let pattern = args
-                .get(1)
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
+    globals.set(
+        "myIpAddress",
+        Function::new(ctx.clone(), || -> String { "127.0.0.1".to_string() })?,
+    )?;
 
-            let matched = glob_match(&pattern, &str_val);
-            Ok(JsValue::from(matched))
-        }),
-    );
+    globals.set(
+        "shExpMatch",
+        Function::new(ctx.clone(), |str_val: String, pattern: String| -> bool {
+            glob_match(&pattern, &str_val)
+        })?,
+    )?;
 
-    // isPlainHostName(host) - true if no dots in hostname
-    let _ = context.register_global_callable(
-        JsString::from("isPlainHostName"),
-        1,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let host = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            Ok(JsValue::from(!host.contains('.')))
-        }),
-    );
+    globals.set(
+        "isPlainHostName",
+        Function::new(ctx.clone(), |host: String| -> bool { !host.contains('.') })?,
+    )?;
 
-    // dnsDomainIs(host, domain) - true if host's domain matches
-    let _ = context.register_global_callable(
-        JsString::from("dnsDomainIs"),
-        2,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let host = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let domain = args
-                .get(1)
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            Ok(JsValue::from(host.ends_with(&domain)))
-        }),
-    );
+    globals.set(
+        "dnsDomainIs",
+        Function::new(ctx.clone(), |host: String, domain: String| -> bool {
+            host.ends_with(&domain)
+        })?,
+    )?;
 
-    // localHostOrDomainIs(host, hostdom) - true if exact match
-    // or host (without domain) matches hostdom's host part
-    let _ = context.register_global_callable(
-        JsString::from("localHostOrDomainIs"),
-        2,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let host = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let hostdom = args
-                .get(1)
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let result = host == hostdom || hostdom.starts_with(&format!("{}.", host));
-            Ok(JsValue::from(result))
-        }),
-    );
+    globals.set(
+        "localHostOrDomainIs",
+        Function::new(ctx.clone(), |host: String, hostdom: String| -> bool {
+            host == hostdom || hostdom.starts_with(&format!("{}.", host))
+        })?,
+    )?;
 
-    // isResolvable(host) - true if DNS can resolve the host
-    let _ = context.register_global_callable(
-        JsString::from("isResolvable"),
-        1,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let host = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let resolvable = format!("{}:0", host)
+    globals.set(
+        "isResolvable",
+        Function::new(ctx.clone(), |host: String| -> bool {
+            format!("{}:0", host)
                 .to_socket_addrs()
                 .map(|mut addrs| addrs.next().is_some())
-                .unwrap_or(false);
-            Ok(JsValue::from(resolvable))
-        }),
-    );
+                .unwrap_or(false)
+        })?,
+    )?;
 
-    // isInNet(host, pattern, mask) - true if IP of host matches pattern/mask
-    let _ = context.register_global_callable(
-        JsString::from("isInNet"),
-        3,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let host = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let pattern = args
-                .get(1)
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let mask = args
-                .get(2)
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-
-            let resolve_ip = |h: &str| -> Option<u32> {
-                // Try parsing as IP first, then DNS resolve
-                if let Ok(ip) = h.parse::<std::net::Ipv4Addr>() {
-                    return Some(u32::from(ip));
-                }
-                format!("{}:0", h)
-                    .to_socket_addrs()
-                    .ok()
-                    .and_then(|mut addrs| {
-                        addrs.find_map(|a| match a {
-                            std::net::SocketAddr::V4(v4) => Some(u32::from(*v4.ip())),
-                            _ => None,
+    globals.set(
+        "isInNet",
+        Function::new(
+            ctx.clone(),
+            |host: String, pattern: String, mask: String| -> bool {
+                let resolve_ip = |h: &str| -> Option<u32> {
+                    if let Ok(ip) = h.parse::<std::net::Ipv4Addr>() {
+                        return Some(u32::from(ip));
+                    }
+                    format!("{}:0", h)
+                        .to_socket_addrs()
+                        .ok()
+                        .and_then(|mut addrs| {
+                            addrs.find_map(|a| match a {
+                                std::net::SocketAddr::V4(v4) => Some(u32::from(*v4.ip())),
+                                _ => None,
+                            })
                         })
-                    })
-            };
+                };
+                (|| -> Option<bool> {
+                    let host_ip = resolve_ip(&host)?;
+                    let pattern_ip = pattern.parse::<std::net::Ipv4Addr>().ok()?;
+                    let mask_ip = mask.parse::<std::net::Ipv4Addr>().ok()?;
+                    let pattern_int = u32::from(pattern_ip);
+                    let mask_int = u32::from(mask_ip);
+                    Some((host_ip & mask_int) == (pattern_int & mask_int))
+                })()
+                .unwrap_or(false)
+            },
+        )?,
+    )?;
 
-            let result = (|| -> Option<bool> {
-                let host_ip = resolve_ip(&host)?;
-                let pattern_ip = pattern.parse::<std::net::Ipv4Addr>().ok()?;
-                let mask_ip = mask.parse::<std::net::Ipv4Addr>().ok()?;
-                let pattern_int = u32::from(pattern_ip);
-                let mask_int = u32::from(mask_ip);
-                Some((host_ip & mask_int) == (pattern_int & mask_int))
-            })()
-            .unwrap_or(false);
-            Ok(JsValue::from(result))
-        }),
-    );
+    globals.set(
+        "dnsDomainLevels",
+        Function::new(ctx.clone(), |host: String| -> i32 {
+            host.matches('.').count() as i32
+        })?,
+    )?;
 
-    // dnsDomainLevels(host) - returns number of dots in hostname
-    let _ = context.register_global_callable(
-        JsString::from("dnsDomainLevels"),
-        1,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let host = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let levels = host.matches('.').count() as i32;
-            Ok(JsValue::from(levels))
-        }),
-    );
-
-    // convert_addr(ipaddr) - converts dotted IP string to integer
-    let _ = context.register_global_callable(
-        JsString::from("convert_addr"),
-        1,
-        NativeFunction::from_fn_ptr(|_, args, _| {
-            let addr = args
-                .first()
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_std_string_escaped())
-                .unwrap_or_default();
-            let result = addr
-                .parse::<std::net::Ipv4Addr>()
+    globals.set(
+        "convert_addr",
+        Function::new(ctx.clone(), |addr: String| -> f64 {
+            addr.parse::<std::net::Ipv4Addr>()
                 .map(|ip| u32::from(ip) as f64)
-                .unwrap_or(0.0);
-            Ok(JsValue::from(result))
-        }),
-    );
+                .unwrap_or(0.0)
+        })?,
+    )?;
 
     // weekdayRange, dateRange, timeRange - stub implementations
     // that return true (permissive) to avoid blocking traffic
-    let _ = context.register_global_callable(
-        JsString::from("weekdayRange"),
-        3,
-        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
-    );
+    globals.set(
+        "weekdayRange",
+        Function::new(ctx.clone(), |_args: Rest<String>| -> bool { true })?,
+    )?;
 
-    let _ = context.register_global_callable(
-        JsString::from("dateRange"),
-        7,
-        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
-    );
+    globals.set(
+        "dateRange",
+        Function::new(ctx.clone(), |_args: Rest<String>| -> bool { true })?,
+    )?;
 
-    let _ = context.register_global_callable(
-        JsString::from("timeRange"),
-        7,
-        NativeFunction::from_fn_ptr(|_, _, _| Ok(JsValue::from(true))),
-    );
+    globals.set(
+        "timeRange",
+        Function::new(ctx.clone(), |_args: Rest<String>| -> bool { true })?,
+    )?;
+
+    Ok(())
 }
 
 impl PacEngine {
@@ -297,52 +198,53 @@ impl PacEngine {
             senders.push(tx);
             let script_clone = script.clone();
 
-            // Boa JS engine uses deep recursion for parsing/evaluation;
+            // QuickJS uses deep recursion for parsing/evaluation;
             // the default thread stack size can cause stack overflows on
             // complex PAC scripts, so we allocate 8 MB per worker thread.
             thread::Builder::new()
                 .name("pac-worker".into())
                 .stack_size(8 * 1024 * 1024)
                 .spawn(move || {
-                    let mut context = Context::default();
+                    let rt = match Runtime::new() {
+                        Ok(r) => r,
+                        Err(e) => {
+                            error!("Failed to create JS runtime: {}", e);
+                            return;
+                        }
+                    };
+                    let ctx = match Context::full(&rt) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            error!("Failed to create JS context: {}", e);
+                            return;
+                        }
+                    };
 
-                    register_pac_functions(&mut context);
-
-                    if let Err(e) = context.eval(Source::from_bytes(&script_clone)) {
-                        error!("Failed to evaluate PAC script: {}", e);
-                    }
-
-                    let func_name = JsString::from("FindProxyForURL");
+                    ctx.with(|ctx| {
+                        if let Err(e) = register_pac_functions(&ctx) {
+                            error!("Failed to register PAC functions: {}", e);
+                        }
+                        if let Err(e) = ctx.eval::<(), _>(script_clone.as_str()) {
+                            error!("Failed to evaluate PAC script: {}", e);
+                        }
+                    });
 
                     while let Some(req) = rx.blocking_recv() {
-                        let global_obj = context.global_object();
+                        let url = req.url;
+                        let host = req.host;
+                        let respond_to = req.respond_to;
 
-                        let result = (|| -> Result<String> {
-                            let func = global_obj
-                                .get(func_name.clone(), &mut context)
+                        let result = ctx.with(|ctx| -> Result<String> {
+                            let func = ctx
+                                .globals()
+                                .get::<_, Function>("FindProxyForURL")
                                 .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
 
-                            if !func.is_callable() {
-                                return Err(anyhow::anyhow!("FindProxyForURL is not defined"));
-                            }
-                            let args = [
-                                JsValue::from(JsString::from(req.url)),
-                                JsValue::from(JsString::from(req.host)),
-                            ];
-                            let res = func
-                                .as_callable()
-                                .unwrap()
-                                .call(&JsValue::undefined(), &args, &mut context)
-                                .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
+                            func.call::<_, String>((url.as_str(), host.as_str()))
+                                .map_err(|e| anyhow::anyhow!("JS Error: {}", e))
+                        });
 
-                            res.as_string()
-                                .map(|s| s.to_std_string_escaped())
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("FindProxyForURL returned non-string")
-                                })
-                        })();
-
-                        let _ = req.respond_to.send(result);
+                        let _ = respond_to.send(result);
                     }
                 })
                 .context("Failed to spawn PAC worker thread")?;
@@ -379,22 +281,21 @@ impl PacEngine {
 #[cfg(test)]
 mod tests {
     use super::{glob_match, register_pac_functions};
-    use boa_engine::{Context, Source};
+    use rquickjs::{Context, Runtime};
 
     #[test]
     fn test_is_plain_host_name() {
-        let mut context = Context::default();
-        register_pac_functions(&mut context);
+        let rt = Runtime::new().unwrap();
+        let ctx = Context::full(&rt).unwrap();
+        ctx.with(|ctx| {
+            register_pac_functions(&ctx).unwrap();
 
-        let res1 = context
-            .eval(Source::from_bytes("isPlainHostName('example.com')"))
-            .unwrap();
-        assert_eq!(res1.as_boolean(), Some(false));
+            let res1: bool = ctx.eval("isPlainHostName('example.com')").unwrap();
+            assert_eq!(res1, false);
 
-        let res2 = context
-            .eval(Source::from_bytes("isPlainHostName('localhost')"))
-            .unwrap();
-        assert_eq!(res2.as_boolean(), Some(true));
+            let res2: bool = ctx.eval("isPlainHostName('localhost')").unwrap();
+            assert_eq!(res2, true);
+        });
     }
 
     #[test]
