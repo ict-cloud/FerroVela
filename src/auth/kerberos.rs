@@ -68,7 +68,9 @@ impl AuthSession for KerberosSession {
             self.ctx = Some(ctx);
         }
 
-        let ctx = self.ctx.as_mut()
+        let ctx = self
+            .ctx
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Kerberos context not initialized"))?;
         match ctx.step(input_token.as_deref(), None) {
             Ok(Some(token)) => {

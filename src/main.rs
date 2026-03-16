@@ -22,7 +22,10 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Err(e) = logger::init() {
-        eprintln!("Warning: Failed to initialize file logger: {}. Continuing with stderr only.", e);
+        eprintln!(
+            "Warning: Failed to initialize file logger: {}. Continuing with stderr only.",
+            e
+        );
     }
     let args = Args::parse();
 
