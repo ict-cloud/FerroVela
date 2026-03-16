@@ -14,6 +14,33 @@ fn test_basic_auth() {
 }
 
 #[test]
+fn test_basic_authenticator_creates_session() {
+    let auth = BasicAuthenticator::new("user".to_string(), "pass".to_string());
+    let mut session = auth.create_session();
+
+    let result = session.step(None).unwrap();
+    assert_eq!(result, Some("Basic dXNlcjpwYXNz".to_string()));
+}
+
+#[test]
+fn test_basic_session_ignores_challenge() {
+    let auth = BasicAuthenticator::new("admin".to_string(), "password123".to_string());
+    let mut session = auth.create_session();
+
+    let result = session.step(Some("Basic realm=\"Some Realm\"")).unwrap();
+    assert_eq!(result, Some("Basic YWRtaW46cGFzc3dvcmQxMjM=".to_string()));
+}
+
+#[test]
+fn test_basic_session_empty_credentials() {
+    let auth = BasicAuthenticator::new("".to_string(), "".to_string());
+    let mut session = auth.create_session();
+
+    let result = session.step(None).unwrap();
+    assert_eq!(result, Some("Basic Og==".to_string()));
+}
+
+#[test]
 fn test_mock_kerberos_auth() {
     let auth = MockKerberosAuthenticator::new();
     let mut session = auth.create_session();

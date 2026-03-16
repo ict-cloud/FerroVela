@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.2]
+
+### Added
+- Replaced **Boa** JavaScript engine with **rquickjs** for PAC file evaluation — significantly reduces binary size and improves JS execution performance.
+- New CI workflows for automatic version bumping and tagging on master (`bump-version.yaml`, `tag.yaml`).
+
+### Changed
+- Moved Basic auth unit tests from `src/auth/basic.rs` to `src/tests/auth_tests.rs`.
+- Updated dependencies and removed unused ones.
+
+### Fixed
+- Unwanted error propagation in `kerberos.rs`, `logger.rs`, and `main.rs` that could cause the application to crash.
+- Removed unused imports in test module.
+
+### Performance
+- Reduced unnecessary string clones in `src/pac.rs`.
+- Optimised `auth_tunnel.rs`, `http_utils.rs`, and `proxy/mod.rs` to reduce allocations.
+
 ## [0.3.1] - 2026-03-13
 
 ### Added

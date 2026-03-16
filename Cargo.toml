@@ -9,10 +9,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util"
 bytes = "1"
 log = "0.4"
 anyhow = "1"
-url = "2"
-musli = { version = "0.0.149", features = ["alloc", "storage", "json"] }
+musli = { version = "0.0.149", features = ["alloc", "json"] }
 # For PAC file execution
-boa_engine = "0.21"
+rquickjs = { version = "0.8", features = ["bindgen"] }
 
 clap = { version = "4.5", features = ["derive"] }
 base64 = "0.22"
@@ -22,10 +21,8 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 iced = { version = "0.14", features = ["tokio"] }
 libgssapi = { version = "0.9", default-features = false }
 ntlmclient = "0.2.*"
-tokio-stream = "0.1.*"
 memchr = "2.8.*"
 glob = "0.3.*"
-async-trait = "0.1.*"
 g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares"] }
 g3-daemon = { git = "https://github.com/bytedance/g3.git", version = "0.4.*", default-features = false }
 keyring = "3.6.*"
@@ -47,6 +44,7 @@ strip = "debuginfo"
 [dev-dependencies]
 tempfile = "3.25.0"
 criterion = { version = "0.8", features = ["async_tokio"] }
+musli = { version = "0.0.149", features = ["storage"] }
 
 [[bench]]
 name = "connect_bench"
