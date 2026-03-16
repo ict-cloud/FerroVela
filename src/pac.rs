@@ -192,11 +192,12 @@ impl PacEngine {
             .unwrap_or(2);
 
         let mut senders = Vec::with_capacity(num_workers);
+        let script = Arc::new(script);
 
         for _ in 0..num_workers {
             let (tx, mut rx) = mpsc::channel::<PacRequest>(32);
             senders.push(tx);
-            let script_clone = script.clone();
+            let script_clone = Arc::clone(&script);
 
             // QuickJS uses deep recursion for parsing/evaluation;
             // the default thread stack size can cause stack overflows on
