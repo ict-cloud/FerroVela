@@ -21,7 +21,9 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    logger::init().expect("Failed to initialize logger");
+    if let Err(e) = logger::init() {
+        eprintln!("Warning: Failed to initialize file logger: {}. Continuing with stderr only.", e);
+    }
     let args = Args::parse();
 
     // Single Instance Check / IPC via Proxy Port (Default 3128)
