@@ -31,20 +31,11 @@ jobs:
           sed -i "0,/^version = \"$CURRENT\"/s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" Cargo.toml
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
 
-      - name: Create pull request and merge
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          BRANCH="chore/bump-version-to-$NEW_VERSION"
-          git checkout -b "$BRANCH"
-          git add Cargo.toml
-          git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
-          git push origin "$BRANCH"
-          gh pr create \
-            --title "chore: bump version to $NEW_VERSION" \
-            --body "Automated patch version bump after merge." \
-            --base master \
-            --head "$BRANCH"
-          gh pr merge "$BRANCH" --merge --auto --delete-branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create pull request
+        uses: actions/create-pull-request@v5
+        with:
+          branch: chore/bump-version-to-${{ env.NEW_VERSION }}
+          commit-message: "chore: bump version to ${{ env.NEW_VERSION }} [skip ci]"
+          title: "chore: bump version to ${{ env.NEW_VERSION }}"
+          body: "Automated patch version bump after merge."
+          base: master
