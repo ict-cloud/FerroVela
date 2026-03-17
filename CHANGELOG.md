@@ -5,6 +5,10 @@
 ### Added
 - Replaced **Boa** JavaScript engine with **rquickjs** for PAC file evaluation — significantly reduces binary size and improves JS execution performance.
 - New CI workflows for automatic version bumping and tagging on master (`bump-version.yaml`, `tag.yaml`).
+- Enabled `vendored-openssl` feature on `g3proxy`: OpenSSL is now compiled from source and statically linked, removing the runtime dependency on the system OpenSSL installation.
+
+### Fixed (CI)
+- `bump-version.yaml` now creates a pull request and auto-merges it instead of pushing directly to `master`, which was blocked by branch protection rules.
 
 ### Changed
 - Moved Basic auth unit tests from `src/auth/basic.rs` to `src/tests/auth_tests.rs`.
