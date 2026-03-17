@@ -23,7 +23,7 @@ libgssapi = { version = "0.9", default-features = false }
 ntlmclient = "0.2.*"
 memchr = "2.8.*"
 glob = "0.3.*"
-g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares"] }
+g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares", "vendored-openssl"] }
 g3-daemon = { git = "https://github.com/bytedance/g3.git", version = "0.4.*", default-features = false }
 keyring = "3.6.*"
 
