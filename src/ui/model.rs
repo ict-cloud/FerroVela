@@ -90,11 +90,12 @@ pub enum Message {
     ToggleService(bool),
     // Log window
     OpenLogs,
-    LogsOpened(window::Id),
+    OpenLogsAt(Option<iced::Point>),
     Tick,
     // IPC / window management
     External,
     WindowCloseRequested(window::Id),
+    WindowClosed(window::Id),
     IdCaptured(window::Id),
 }
 
