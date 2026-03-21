@@ -36,6 +36,7 @@ jobs:
       - name: Create pull request
         uses: peter-evans/create-pull-request@v8.1.0
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: chore/bump-version-to-${{ env.NEW_VERSION }}
           commit-message: "chore: bump version to ${{ env.NEW_VERSION }} [skip ci]"
           title: "chore: bump version to ${{ env.NEW_VERSION }}"

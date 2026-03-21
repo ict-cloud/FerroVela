@@ -15,7 +15,6 @@ impl log::Log for SimpleLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             // More efficient formatting - single string allocation
-            eprintln!("{} - {}", record.level(), record.args());
             if let Ok(mut file) = self.file.lock() {
                 // Use writeln! for better efficiency
                 let _ = writeln!(file, "{} - {}", record.level(), record.args());
