@@ -410,9 +410,7 @@ mod tests {
             let lvl2: i32 = ctx.eval("dnsDomainLevels('www.example.com')").unwrap();
             assert_eq!(lvl2, 2);
 
-            let lvl3: i32 = ctx
-                .eval("dnsDomainLevels('a.b.example.com')")
-                .unwrap();
+            let lvl3: i32 = ctx.eval("dnsDomainLevels('a.b.example.com')").unwrap();
             assert_eq!(lvl3, 3);
         });
     }
@@ -429,9 +427,7 @@ mod tests {
             assert!(t);
 
             let f: bool = ctx
-                .eval(
-                    "shExpMatch('http://home.netscape.com/people/other/index.html', '*/ari/*')",
-                )
+                .eval("shExpMatch('http://home.netscape.com/people/other/index.html', '*/ari/*')")
                 .unwrap();
             assert!(!f);
 
@@ -440,9 +436,7 @@ mod tests {
             assert!(t2);
 
             // Multi-asterisk collapse
-            let t3: bool = ctx
-                .eval("shExpMatch('hello', '***')")
-                .unwrap();
+            let t3: bool = ctx.eval("shExpMatch('hello', '***')").unwrap();
             assert!(t3);
         });
     }
@@ -579,7 +573,10 @@ mod tests {
         let engine = PacEngine::new(tmp.path().to_str().unwrap()).await.unwrap();
 
         let direct = engine
-            .find_proxy("http://host.internal.example.com/", "host.internal.example.com")
+            .find_proxy(
+                "http://host.internal.example.com/",
+                "host.internal.example.com",
+            )
             .await
             .unwrap();
         assert_eq!(direct, "DIRECT");
@@ -628,7 +625,9 @@ mod tests {
         // PacEngine::new succeeds (errors are logged, not propagated on init)
         // but find_proxy should fail because FindProxyForURL is not defined.
         let engine = PacEngine::new(tmp.path().to_str().unwrap()).await.unwrap();
-        let result = engine.find_proxy("http://example.com/", "example.com").await;
+        let result = engine
+            .find_proxy("http://example.com/", "example.com")
+            .await;
         assert!(result.is_err());
     }
 }

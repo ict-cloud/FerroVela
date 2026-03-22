@@ -118,17 +118,17 @@ fn test_ntlm_invalid_challenge() {
 /// 48-55  Version (8 bytes) — ntlmclient requires this field
 fn build_ntlm_type2_challenge(server_challenge: [u8; 8]) -> Vec<u8> {
     let mut msg = Vec::with_capacity(56);
-    msg.extend_from_slice(b"NTLMSSP\0");               // Signature
-    msg.extend_from_slice(&[0x02, 0x00, 0x00, 0x00]);  // MessageType = 2
-    // TargetNameFields: len=0, maxlen=0, offset=56 (0x38)
+    msg.extend_from_slice(b"NTLMSSP\0"); // Signature
+    msg.extend_from_slice(&[0x02, 0x00, 0x00, 0x00]); // MessageType = 2
+                                                      // TargetNameFields: len=0, maxlen=0, offset=56 (0x38)
     msg.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00]);
     // NegotiateFlags: NEGOTIATE_UNICODE (0x01) | NEGOTIATE_NTLM (0x200)
     msg.extend_from_slice(&[0x01, 0x02, 0x00, 0x00]);
-    msg.extend_from_slice(&server_challenge);           // ServerChallenge
-    msg.extend_from_slice(&[0x00; 8]);                  // Reserved
-    // TargetInfoFields: len=0, maxlen=0, offset=56 (0x38)
+    msg.extend_from_slice(&server_challenge); // ServerChallenge
+    msg.extend_from_slice(&[0x00; 8]); // Reserved
+                                       // TargetInfoFields: len=0, maxlen=0, offset=56 (0x38)
     msg.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00]);
-    msg.extend_from_slice(&[0x00; 8]);                  // Version (required by ntlmclient)
+    msg.extend_from_slice(&[0x00; 8]); // Version (required by ntlmclient)
     msg
 }
 

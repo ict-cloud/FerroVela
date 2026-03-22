@@ -415,7 +415,10 @@ mod tests {
 
     #[test]
     fn test_parse_status_200() {
-        assert_eq!(parse_status("HTTP/1.1 200 Connection established\r\n"), Some(200));
+        assert_eq!(
+            parse_status("HTTP/1.1 200 Connection established\r\n"),
+            Some(200)
+        );
     }
 
     #[test]
