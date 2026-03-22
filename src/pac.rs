@@ -281,16 +281,21 @@ impl PacEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::{glob_match, register_pac_functions};
+    use super::{glob_match, register_pac_functions, PacEngine};
     use rquickjs::{Context, Runtime};
+
+    /// Helper: create a JS runtime with all PAC globals registered.
+    fn pac_ctx() -> (Runtime, Context) {
+        let rt = Runtime::new().unwrap();
+        let ctx = Context::full(&rt).unwrap();
+        ctx.with(|ctx| register_pac_functions(&ctx).unwrap());
+        (rt, ctx)
+    }
 
     #[test]
     fn test_is_plain_host_name() {
-        let rt = Runtime::new().unwrap();
-        let ctx = Context::full(&rt).unwrap();
+        let (_rt, ctx) = pac_ctx();
         ctx.with(|ctx| {
-            register_pac_functions(&ctx).unwrap();
-
             let res1: bool = ctx.eval("isPlainHostName('example.com')").unwrap();
             assert_eq!(res1, false);
 
@@ -339,5 +344,290 @@ mod tests {
                 text
             );
         }
+    }
+
+    // ── dnsDomainIs ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_dns_domain_is() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            let t: bool = ctx
+                .eval("dnsDomainIs('www.netscape.com', '.netscape.com')")
+                .unwrap();
+            assert!(t);
+
+            let f: bool = ctx
+                .eval("dnsDomainIs('www.netscape.com', '.mcom.com')")
+                .unwrap();
+            assert!(!f);
+
+            let f2: bool = ctx
+                .eval("dnsDomainIs('localhost', '.netscape.com')")
+                .unwrap();
+            assert!(!f2);
+        });
+    }
+
+    // ── localHostOrDomainIs ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_local_host_or_domain_is() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            // Exact FQDN match
+            let t1: bool = ctx
+                .eval("localHostOrDomainIs('www.netscape.com', 'www.netscape.com')")
+                .unwrap();
+            assert!(t1);
+
+            // Short name that is the hostname part of the domain
+            let t2: bool = ctx
+                .eval("localHostOrDomainIs('www', 'www.netscape.com')")
+                .unwrap();
+            assert!(t2);
+
+            // Different hostname
+            let f: bool = ctx
+                .eval("localHostOrDomainIs('home.netscape.com', 'www.netscape.com')")
+                .unwrap();
+            assert!(!f);
+        });
+    }
+
+    // ── dnsDomainLevels ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_dns_domain_levels() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            let lvl0: i32 = ctx.eval("dnsDomainLevels('localhost')").unwrap();
+            assert_eq!(lvl0, 0);
+
+            let lvl1: i32 = ctx.eval("dnsDomainLevels('example.com')").unwrap();
+            assert_eq!(lvl1, 1);
+
+            let lvl2: i32 = ctx.eval("dnsDomainLevels('www.example.com')").unwrap();
+            assert_eq!(lvl2, 2);
+
+            let lvl3: i32 = ctx.eval("dnsDomainLevels('a.b.example.com')").unwrap();
+            assert_eq!(lvl3, 3);
+        });
+    }
+
+    // ── shExpMatch ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_sh_exp_match() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            let t: bool = ctx
+                .eval("shExpMatch('http://home.netscape.com/people/ari/index.html', '*/ari/*')")
+                .unwrap();
+            assert!(t);
+
+            let f: bool = ctx
+                .eval("shExpMatch('http://home.netscape.com/people/other/index.html', '*/ari/*')")
+                .unwrap();
+            assert!(!f);
+
+            // Wildcard-only pattern matches anything
+            let t2: bool = ctx.eval("shExpMatch('anything', '*')").unwrap();
+            assert!(t2);
+
+            // Multi-asterisk collapse
+            let t3: bool = ctx.eval("shExpMatch('hello', '***')").unwrap();
+            assert!(t3);
+        });
+    }
+
+    // ── myIpAddress ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_my_ip_address() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            let ip: String = ctx.eval("myIpAddress()").unwrap();
+            assert_eq!(ip, "127.0.0.1");
+        });
+    }
+
+    // ── dnsResolve ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_dns_resolve_stub() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            // The stub returns the hostname unchanged (no actual DNS lookup)
+            let result: String = ctx.eval("dnsResolve('example.com')").unwrap();
+            assert_eq!(result, "example.com");
+        });
+    }
+
+    // ── convert_addr ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_convert_addr() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            // 127.0.0.1 → 127*2^24 + 1 = 2130706433
+            let loopback: f64 = ctx.eval("convert_addr('127.0.0.1')").unwrap();
+            assert_eq!(loopback as u32, 2130706433u32);
+
+            // 0.0.0.0 → 0
+            let zero: f64 = ctx.eval("convert_addr('0.0.0.0')").unwrap();
+            assert_eq!(zero as u32, 0);
+
+            // Invalid address → 0
+            let invalid: f64 = ctx.eval("convert_addr('not-an-ip')").unwrap();
+            assert_eq!(invalid as u32, 0);
+        });
+    }
+
+    // ── isInNet ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_in_net() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            // Same /16 subnet
+            let t: bool = ctx
+                .eval("isInNet('198.95.249.79', '198.95.0.0', '255.255.0.0')")
+                .unwrap();
+            assert!(t);
+
+            // Different subnet
+            let f: bool = ctx
+                .eval("isInNet('198.95.249.79', '192.168.0.0', '255.255.0.0')")
+                .unwrap();
+            assert!(!f);
+
+            // Loopback in /8
+            let t2: bool = ctx
+                .eval("isInNet('127.0.0.1', '127.0.0.0', '255.0.0.0')")
+                .unwrap();
+            assert!(t2);
+
+            // Host address with /32
+            let t3: bool = ctx
+                .eval("isInNet('10.0.0.1', '10.0.0.1', '255.255.255.255')")
+                .unwrap();
+            assert!(t3);
+        });
+    }
+
+    // ── time stubs (weekdayRange / dateRange / timeRange) ─────────────────────
+
+    #[test]
+    fn test_time_stubs_always_true() {
+        let (_rt, ctx) = pac_ctx();
+        ctx.with(|ctx| {
+            // weekdayRange is always called with strings in PAC scripts.
+            let wd: bool = ctx.eval("weekdayRange('MON', 'FRI')").unwrap();
+            assert!(wd);
+
+            // dateRange and timeRange are specified to accept numbers in PAC,
+            // but the stubs use Rest<String> which requires string args from JS.
+            // We test with strings here; the stubs ignore all args and return true.
+            let dr: bool = ctx.eval("dateRange('1', '31')").unwrap();
+            assert!(dr);
+
+            let tr: bool = ctx.eval("timeRange('0', '23')").unwrap();
+            assert!(tr);
+        });
+    }
+
+    // ── PacEngine::find_proxy (end-to-end) ────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_find_proxy_direct() {
+        let pac_script = r#"
+            function FindProxyForURL(url, host) {
+                return "DIRECT";
+            }
+        "#;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), pac_script).unwrap();
+
+        let engine = PacEngine::new(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = engine
+            .find_proxy("http://example.com/", "example.com")
+            .await
+            .unwrap();
+        assert_eq!(result, "DIRECT");
+    }
+
+    #[tokio::test]
+    async fn test_find_proxy_conditional_routing() {
+        let pac_script = r#"
+            function FindProxyForURL(url, host) {
+                if (dnsDomainIs(host, '.internal.example.com')) {
+                    return "DIRECT";
+                }
+                return "PROXY upstream:8080";
+            }
+        "#;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), pac_script).unwrap();
+
+        let engine = PacEngine::new(tmp.path().to_str().unwrap()).await.unwrap();
+
+        let direct = engine
+            .find_proxy(
+                "http://host.internal.example.com/",
+                "host.internal.example.com",
+            )
+            .await
+            .unwrap();
+        assert_eq!(direct, "DIRECT");
+
+        let proxied = engine
+            .find_proxy("http://example.com/", "example.com")
+            .await
+            .unwrap();
+        assert_eq!(proxied, "PROXY upstream:8080");
+    }
+
+    #[tokio::test]
+    async fn test_find_proxy_uses_sh_exp_match() {
+        let pac_script = r#"
+            function FindProxyForURL(url, host) {
+                if (shExpMatch(url, "http://special.*")) {
+                    return "PROXY special-proxy:3128";
+                }
+                return "DIRECT";
+            }
+        "#;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), pac_script).unwrap();
+
+        let engine = PacEngine::new(tmp.path().to_str().unwrap()).await.unwrap();
+
+        let matched = engine
+            .find_proxy("http://special.example.com/path", "special.example.com")
+            .await
+            .unwrap();
+        assert_eq!(matched, "PROXY special-proxy:3128");
+
+        let unmatched = engine
+            .find_proxy("https://other.com/", "other.com")
+            .await
+            .unwrap();
+        assert_eq!(unmatched, "DIRECT");
+    }
+
+    #[tokio::test]
+    async fn test_find_proxy_invalid_script() {
+        let pac_script = "this is not valid javascript {{{";
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), pac_script).unwrap();
+
+        // PacEngine::new succeeds (errors are logged, not propagated on init)
+        // but find_proxy should fail because FindProxyForURL is not defined.
+        let engine = PacEngine::new(tmp.path().to_str().unwrap()).await.unwrap();
+        let result = engine
+            .find_proxy("http://example.com/", "example.com")
+            .await;
+        assert!(result.is_err());
     }
 }

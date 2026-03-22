@@ -319,3 +319,125 @@ async fn forward_buffered_to_g3proxy(client: &mut TcpStream, internal_port: u16,
         debug!("g3proxy forward error: {}", e);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_connect_target ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_connect_target_valid() {
+        assert_eq!(
+            parse_connect_target("CONNECT example.com:443 HTTP/1.1"),
+            Some("example.com:443".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_connect_target_case_insensitive() {
+        assert_eq!(
+            parse_connect_target("connect example.com:443 HTTP/1.1"),
+            Some("example.com:443".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_connect_target_not_connect_method() {
+        assert_eq!(parse_connect_target("GET / HTTP/1.1"), None);
+    }
+
+    #[test]
+    fn test_parse_connect_target_missing_target() {
+        assert_eq!(parse_connect_target("CONNECT"), None);
+    }
+
+    #[test]
+    fn test_parse_connect_target_empty() {
+        assert_eq!(parse_connect_target(""), None);
+    }
+
+    // ── http_method ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_http_method_connect() {
+        assert_eq!(http_method("CONNECT example.com:443 HTTP/1.1"), "CONNECT");
+    }
+
+    #[test]
+    fn test_http_method_get() {
+        assert_eq!(http_method("GET / HTTP/1.1"), "GET");
+    }
+
+    #[test]
+    fn test_http_method_post() {
+        assert_eq!(http_method("POST /path HTTP/1.1"), "POST");
+    }
+
+    #[test]
+    fn test_http_method_empty() {
+        assert_eq!(http_method(""), "");
+    }
+
+    // ── find_proxy_authenticate ───────────────────────────────────────────────
+
+    #[test]
+    fn test_find_proxy_authenticate_ntlm() {
+        let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: NTLM\r\nContent-Length: 0\r\n\r\n";
+        assert_eq!(find_proxy_authenticate(headers), Some("NTLM".to_string()));
+    }
+
+    #[test]
+    fn test_find_proxy_authenticate_negotiate_with_token() {
+        let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Negotiate YIIGhg==\r\n\r\n";
+        assert_eq!(
+            find_proxy_authenticate(headers),
+            Some("Negotiate YIIGhg==".to_string())
+        );
+    }
+
+    #[test]
+    fn test_find_proxy_authenticate_missing() {
+        let headers = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+        assert_eq!(find_proxy_authenticate(headers), None);
+    }
+
+    #[test]
+    fn test_find_proxy_authenticate_lowercase_header() {
+        let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nproxy-authenticate: Basic realm=\"proxy\"\r\n\r\n";
+        assert_eq!(
+            find_proxy_authenticate(headers),
+            Some("Basic realm=\"proxy\"".to_string())
+        );
+    }
+
+    // ── parse_status ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_status_200() {
+        assert_eq!(
+            parse_status("HTTP/1.1 200 Connection established\r\n"),
+            Some(200)
+        );
+    }
+
+    #[test]
+    fn test_parse_status_407() {
+        assert_eq!(
+            parse_status("HTTP/1.1 407 Proxy Authentication Required\r\n"),
+            Some(407)
+        );
+    }
+
+    #[test]
+    fn test_parse_status_502() {
+        assert_eq!(parse_status("HTTP/1.1 502 Bad Gateway\r\n"), Some(502));
+    }
+
+    #[test]
+    fn test_parse_status_malformed() {
+        assert_eq!(parse_status("not a response"), None);
+        assert_eq!(parse_status("HTTP/1.1"), None);
+        assert_eq!(parse_status(""), None);
+    }
+}

@@ -104,3 +104,69 @@ fn test_ntlm_invalid_challenge() {
     let err_msg = res2.unwrap_err().to_string();
     assert!(err_msg.contains("Invalid NTLM challenge header"));
 }
+
+/// Build a minimal but spec-compliant NTLM Type 2 (Challenge) message.
+///
+/// Layout (56 bytes total, no payload):
+///  0- 7  Signature "NTLMSSP\0"
+///  8-11  MessageType = 2
+/// 12-19  TargetNameFields: len=0, maxlen=0, offset=56
+/// 20-23  NegotiateFlags
+/// 24-31  ServerChallenge (8 bytes)
+/// 32-39  Reserved (8 bytes of zeros)
+/// 40-47  TargetInfoFields: len=0, maxlen=0, offset=56
+/// 48-55  Version (8 bytes) — ntlmclient requires this field
+fn build_ntlm_type2_challenge(server_challenge: [u8; 8]) -> Vec<u8> {
+    let mut msg = Vec::with_capacity(56);
+    msg.extend_from_slice(b"NTLMSSP\0"); // Signature
+    msg.extend_from_slice(&[0x02, 0x00, 0x00, 0x00]); // MessageType = 2
+                                                      // TargetNameFields: len=0, maxlen=0, offset=56 (0x38)
+    msg.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00]);
+    // NegotiateFlags: NEGOTIATE_UNICODE (0x01) | NEGOTIATE_NTLM (0x200)
+    msg.extend_from_slice(&[0x01, 0x02, 0x00, 0x00]);
+    msg.extend_from_slice(&server_challenge); // ServerChallenge
+    msg.extend_from_slice(&[0x00; 8]); // Reserved
+                                       // TargetInfoFields: len=0, maxlen=0, offset=56 (0x38)
+    msg.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x38, 0x00, 0x00, 0x00]);
+    msg.extend_from_slice(&[0x00; 8]); // Version (required by ntlmclient)
+    msg
+}
+
+#[test]
+fn test_ntlm_full_handshake() {
+    let auth = NtlmAuthenticator::new(
+        "user".into(),
+        "pass".into(),
+        "DOMAIN".into(),
+        "WORKSTATION".into(),
+    );
+    let mut session = auth.create_session();
+
+    // Step 1: Negotiate — produces a Type 1 message
+    let negotiate = session.step(None).unwrap().unwrap();
+    assert!(negotiate.starts_with("NTLM "));
+    let neg_bytes = base64::prelude::BASE64_STANDARD
+        .decode(negotiate.trim_start_matches("NTLM "))
+        .unwrap();
+    assert_eq!(&neg_bytes[..8], b"NTLMSSP\0");
+    assert_eq!(neg_bytes[8], 0x01); // MessageType = 1
+
+    // Step 2: Challenge — feed a Type 2 message, expect a Type 3 response
+    let type2_bytes = build_ntlm_type2_challenge([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+    let challenge_header = format!(
+        "NTLM {}",
+        base64::prelude::BASE64_STANDARD.encode(&type2_bytes)
+    );
+
+    let authenticate = session.step(Some(&challenge_header)).unwrap().unwrap();
+    assert!(authenticate.starts_with("NTLM "));
+    let auth_bytes = base64::prelude::BASE64_STANDARD
+        .decode(authenticate.trim_start_matches("NTLM "))
+        .unwrap();
+    assert_eq!(&auth_bytes[..8], b"NTLMSSP\0");
+    assert_eq!(auth_bytes[8], 0x03); // MessageType = 3 (Authenticate)
+
+    // Step 3: Complete — session signals it is done
+    let done = session.step(None).unwrap();
+    assert_eq!(done, None);
+}
