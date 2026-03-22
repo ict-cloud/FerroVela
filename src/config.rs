@@ -189,4 +189,191 @@ mod tests {
         let loaded_config = load_config(path).expect("Failed to deserialize saved config");
         assert_eq!(loaded_config.proxy.port, 3128);
     }
+
+    // ── ProxyConfig round-trip ────────────────────────────────────────────────
+
+    #[test]
+    fn test_proxy_config_round_trip() {
+        use tempfile::NamedTempFile;
+
+        let config = Config {
+            proxy: ProxyConfig {
+                port: 8080,
+                pac_file: Some("http://wpad.corp/proxy.pac".to_string()),
+                allow_private_ips: true,
+            },
+            upstream: None,
+            exceptions: None,
+        };
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+
+        save_config(path, &config).unwrap();
+        let loaded = load_config(path).unwrap();
+
+        assert_eq!(loaded.proxy.port, 8080);
+        assert_eq!(
+            loaded.proxy.pac_file.as_deref(),
+            Some("http://wpad.corp/proxy.pac")
+        );
+        assert!(loaded.proxy.allow_private_ips);
+        assert!(loaded.upstream.is_none());
+        assert!(loaded.exceptions.is_none());
+    }
+
+    // ── UpstreamConfig round-trip ─────────────────────────────────────────────
+
+    #[test]
+    fn test_upstream_config_basic_round_trip() {
+        use tempfile::NamedTempFile;
+
+        let config = Config {
+            proxy: ProxyConfig::default(),
+            upstream: Some(UpstreamConfig {
+                auth_type: "basic".to_string(),
+                username: Some("alice".to_string()),
+                password: Some("s3cret".to_string()),
+                use_keyring: false,
+                domain: None,
+                workstation: None,
+                proxy_url: Some("http://proxy.corp:8080".to_string()),
+            }),
+            exceptions: None,
+        };
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+
+        save_config(path, &config).unwrap();
+        let loaded = load_config(path).unwrap();
+
+        let upstream = loaded.upstream.unwrap();
+        assert_eq!(upstream.auth_type, "basic");
+        assert_eq!(upstream.username.as_deref(), Some("alice"));
+        assert_eq!(upstream.password.as_deref(), Some("s3cret"));
+        assert!(!upstream.use_keyring);
+        assert_eq!(upstream.proxy_url.as_deref(), Some("http://proxy.corp:8080"));
+    }
+
+    #[test]
+    fn test_upstream_config_ntlm_round_trip() {
+        use tempfile::NamedTempFile;
+
+        let config = Config {
+            proxy: ProxyConfig::default(),
+            upstream: Some(UpstreamConfig {
+                auth_type: "ntlm".to_string(),
+                username: Some("bob".to_string()),
+                password: Some("hunter2".to_string()),
+                use_keyring: false,
+                domain: Some("CORP".to_string()),
+                workstation: Some("LAPTOP01".to_string()),
+                proxy_url: Some("http://ntlm-proxy:3128".to_string()),
+            }),
+            exceptions: None,
+        };
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+
+        save_config(path, &config).unwrap();
+        let loaded = load_config(path).unwrap();
+
+        let upstream = loaded.upstream.unwrap();
+        assert_eq!(upstream.auth_type, "ntlm");
+        assert_eq!(upstream.domain.as_deref(), Some("CORP"));
+        assert_eq!(upstream.workstation.as_deref(), Some("LAPTOP01"));
+    }
+
+    #[test]
+    fn test_upstream_config_keyring_flag_round_trip() {
+        use tempfile::NamedTempFile;
+
+        let config = Config {
+            proxy: ProxyConfig::default(),
+            upstream: Some(UpstreamConfig {
+                auth_type: "basic".to_string(),
+                username: Some("carol".to_string()),
+                password: None,
+                use_keyring: true,
+                domain: None,
+                workstation: None,
+                proxy_url: None,
+            }),
+            exceptions: None,
+        };
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+
+        save_config(path, &config).unwrap();
+        let loaded = load_config(path).unwrap();
+
+        let upstream = loaded.upstream.unwrap();
+        assert!(upstream.use_keyring);
+        assert!(upstream.password.is_none());
+    }
+
+    // ── ExceptionsConfig round-trip ───────────────────────────────────────────
+
+    #[test]
+    fn test_exceptions_config_round_trip() {
+        use tempfile::NamedTempFile;
+
+        let config = Config {
+            proxy: ProxyConfig::default(),
+            upstream: None,
+            exceptions: Some(ExceptionsConfig {
+                hosts: vec![
+                    "localhost".to_string(),
+                    "*.internal.corp".to_string(),
+                    "10.0.0.1".to_string(),
+                ],
+            }),
+        };
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+
+        save_config(path, &config).unwrap();
+        let loaded = load_config(path).unwrap();
+
+        let exceptions = loaded.exceptions.unwrap();
+        assert_eq!(exceptions.hosts.len(), 3);
+        assert!(exceptions.matches("localhost"));
+        assert!(exceptions.matches("host.internal.corp"));
+        assert!(exceptions.matches("10.0.0.1"));
+        assert!(!exceptions.matches("external.com"));
+    }
+
+    // ── load_config error handling ────────────────────────────────────────────
+
+    #[test]
+    fn test_load_config_missing_file() {
+        let result = load_config("/nonexistent/path/config.json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_config_invalid_json() {
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        fs::write(tmp.path(), b"this is not valid json {{{").unwrap();
+
+        let result = load_config(tmp.path().to_str().unwrap());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_config_empty_file() {
+        use tempfile::NamedTempFile;
+
+        let tmp = NamedTempFile::new().unwrap();
+        fs::write(tmp.path(), b"").unwrap();
+
+        let result = load_config(tmp.path().to_str().unwrap());
+        assert!(result.is_err());
+    }
 }
