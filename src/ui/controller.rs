@@ -160,8 +160,7 @@ impl ConfigEditor {
             Message::OpenLogs => {
                 if self.log_window_id.is_none() {
                     if let Some(main_id) = self.main_window_id {
-                        return window::position(main_id)
-                            .map(Message::OpenLogsAt);
+                        return window::position(main_id).map(Message::OpenLogsAt);
                     }
                     return self.open_log_window(None);
                 } else if let Some(id) = self.log_window_id {
