@@ -253,7 +253,10 @@ mod tests {
         assert_eq!(upstream.username.as_deref(), Some("alice"));
         assert_eq!(upstream.password.as_deref(), Some("s3cret"));
         assert!(!upstream.use_keyring);
-        assert_eq!(upstream.proxy_url.as_deref(), Some("http://proxy.corp:8080"));
+        assert_eq!(
+            upstream.proxy_url.as_deref(),
+            Some("http://proxy.corp:8080")
+        );
     }
 
     #[test]

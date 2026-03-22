@@ -93,8 +93,7 @@ async fn test_perform_authenticated_connect_direct_200() {
     });
 
     let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result =
-        perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_ok());
 }
 
@@ -127,8 +126,7 @@ async fn test_perform_authenticated_connect_407_then_200() {
     });
 
     let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result =
-        perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_ok());
 }
 
@@ -164,11 +162,13 @@ async fn test_perform_authenticated_connect_exhausted_407() {
     });
 
     let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result =
-        perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("exhausted") || err.contains("407"), "unexpected error: {err}");
+    assert!(
+        err.contains("exhausted") || err.contains("407"),
+        "unexpected error: {err}"
+    );
 }
 
 /// Mock proxy returns a non-200/non-407 status (e.g. 503) — should return an error.
@@ -199,8 +199,7 @@ async fn test_perform_authenticated_connect_unexpected_status() {
     });
 
     let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result =
-        perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("503"), "unexpected error: {err}");
