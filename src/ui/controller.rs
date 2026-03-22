@@ -91,10 +91,11 @@ impl ConfigEditor {
                 Task::none()
             }
             Message::OpenLogs
-            | Message::LogsOpened(_)
+            | Message::OpenLogsAt(_)
             | Message::Tick
             | Message::External
             | Message::WindowCloseRequested(_)
+            | Message::WindowClosed(_)
             | Message::IdCaptured(_) => self.handle_window_message(message),
         }
     }
@@ -158,20 +159,18 @@ impl ConfigEditor {
         match message {
             Message::OpenLogs => {
                 if self.log_window_id.is_none() {
-                    let (id, open_task) = window::open(window::Settings {
-                        size: (800.0, 600.0).into(),
-                        ..Default::default()
-                    });
-                    self.log_content = String::new();
-                    self.load_logs();
-                    self.show_logs = true;
-                    return open_task.map(move |_| Message::LogsOpened(id));
+                    if let Some(main_id) = self.main_window_id {
+                        return window::position(main_id).map(Message::OpenLogsAt);
+                    }
+                    return self.open_log_window(None);
                 } else if let Some(id) = self.log_window_id {
                     return window::gain_focus(id);
                 }
             }
-            Message::LogsOpened(id) => {
-                self.log_window_id = Some(id);
+            Message::OpenLogsAt(pos) => {
+                if self.log_window_id.is_none() {
+                    return self.open_log_window(pos);
+                }
             }
             Message::Tick => {
                 if self.show_logs || self.log_window_id.is_some() {
@@ -181,6 +180,12 @@ impl ConfigEditor {
             Message::External => {
                 if let Some(id) = self.main_window_id {
                     return window::minimize(id, false).chain(window::gain_focus(id));
+                }
+            }
+            Message::WindowClosed(id) => {
+                if Some(id) == self.log_window_id {
+                    self.log_window_id = None;
+                    self.show_logs = false;
                 }
             }
             Message::WindowCloseRequested(id) => {
@@ -303,6 +308,23 @@ impl ConfigEditor {
         }
     }
 
+    fn open_log_window(&mut self, main_pos: Option<iced::Point>) -> Task<Message> {
+        let position = main_pos
+            .map(|p| window::Position::Specific(iced::Point::new(p.x + 40.0, p.y + 40.0)))
+            .unwrap_or(window::Position::Default);
+
+        let (id, open_task) = window::open(window::Settings {
+            size: (800.0, 600.0).into(),
+            position,
+            ..Default::default()
+        });
+        self.log_window_id = Some(id);
+        self.log_content = String::new();
+        self.load_logs();
+        self.show_logs = true;
+        open_task.map(|_| Message::Tick)
+    }
+
     pub fn load_logs(&mut self) {
         if let Ok(mut file) = std::fs::File::open("service.log") {
             if let Ok(metadata) = file.metadata() {
@@ -334,6 +356,7 @@ impl ConfigEditor {
             iced::Event::Window(window::Event::CloseRequested) => {
                 Some(Message::WindowCloseRequested(id))
             }
+            iced::Event::Window(window::Event::Closed) => Some(Message::WindowClosed(id)),
             iced::Event::Window(_) => Some(Message::IdCaptured(id)),
             _ => None,
         });
