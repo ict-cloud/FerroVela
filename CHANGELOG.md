@@ -1,6 +1,16 @@
 # Changelog
 
-## [0.3.2]
+## [0.3.3]
+
+### Changed
+- Updated dependencies and removed unused ones.
+- A second window now always opens on launch, positioned with a small offset from the main window.
+- Terminal window is no longer kept open after use.
+
+### Fixed (CI)
+- `bump-version.yaml` now passes the GitHub token explicitly to avoid authentication failures.
+
+## [0.3.2] - 2026-03-18
 
 ### Added
 - Replaced **Boa** JavaScript engine with **rquickjs** for PAC file evaluation — significantly reduces binary size and improves JS execution performance.
@@ -9,10 +19,10 @@
 
 ### Fixed (CI)
 - `bump-version.yaml` now creates a pull request and auto-merges it instead of pushing directly to `master`, which was blocked by branch protection rules.
+- `bump-version.yaml` now passes the GitHub token explicitly to avoid authentication failures.
 
 ### Changed
 - Moved Basic auth unit tests from `src/auth/basic.rs` to `src/tests/auth_tests.rs`.
-- Updated dependencies and removed unused ones.
 
 ### Fixed
 - Unwanted error propagation in `kerberos.rs`, `logger.rs`, and `main.rs` that could cause the application to crash.
