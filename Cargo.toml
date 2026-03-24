@@ -6,7 +6,6 @@ edition = "2021"
 [package.metadata.bundle]
 identifier = "com.ictcloud.ferrovela"
 name = "FerroVela"
-version = "0.3.3"
 copyright = "Copyright (c) 2026 Pascal Rudnik"
 category = "public.app-category.utilities"
 short_description = "Small forward proxy for enterprise settings."
