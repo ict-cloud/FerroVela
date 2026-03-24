@@ -1,7 +1,16 @@
 [package]
 name = "ferrovela"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
+
+[package.metadata.bundle]
+identifier = "com.ictcloud.ferrovela"
+name = "FerroVela"
+icon = ["assets/icon.icns"]
+copyright = "Copyright (c) 2026 Pascal Rudnik"
+category = "public.app-category.utilities"
+short_description = "Small forward proxy for enterprise settings."
+long_description = "Small forward proxy for enterprise settings with extensive functionality."
 
 [dependencies]
 # Core async runtime - using only needed features instead of 'full'
