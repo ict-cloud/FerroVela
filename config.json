@@ -1,1 +1,1 @@
-{"proxy":{"port":3128,"pac_file":"http://wpad.pnet.ch/proxy.pac","allow_private_ips":false},"upstream":{"auth_type":"kerberos","username":null,"password":null,"use_keyring":false,"domain":null,"workstation":null,"proxy_url":null},"exceptions":null}
+{"proxy":{"port":3128,"pac_file":null,"allow_private_ips":false},"upstream":null,"exceptions":null}

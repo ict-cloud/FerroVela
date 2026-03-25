@@ -11,6 +11,7 @@ copyright = "Copyright (c) 2026 Pascal Rudnik"
 category = "public.app-category.utilities"
 short_description = "Small forward proxy for enterprise settings."
 long_description = "Small forward proxy for enterprise settings with extensive functionality."
+resources = ["config.json"]
 
 [dependencies]
 # Core async runtime - using only needed features instead of 'full'

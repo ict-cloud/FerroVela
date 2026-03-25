@@ -2,6 +2,7 @@ use anyhow::Result;
 use musli::{Decode, Encode};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -84,6 +85,59 @@ impl ExceptionsConfig {
         }
         false
     }
+}
+
+/// Returns the user-writable config path.
+/// On macOS: ~/Library/Application Support/com.ictcloud.ferrovela/config.json
+/// Elsewhere: ./config.json
+pub fn default_config_path() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("com.ictcloud.ferrovela")
+            .join("config.json")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        PathBuf::from("config.json")
+    }
+}
+
+/// Returns the path to the default config bundled in Contents/Resources/, if it exists.
+fn bundle_default_config_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    // Bundle layout: Contents/MacOS/ferrovela -> Contents/Resources/config.json
+    let candidate = exe.parent()?.parent()?.join("Resources").join("config.json");
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+/// Ensures a user config file exists at `path`.
+/// If it does not exist, it is copied from the bundle resource or written as default.
+pub fn ensure_user_config(path: &Path) -> Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if let Some(bundle_config) = bundle_default_config_path() {
+        fs::copy(&bundle_config, path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        return Ok(());
+    }
+    // No bundle resource found — write a programmatic default
+    save_config(path.to_string_lossy().as_ref(), &Config::default())
 }
 
 pub fn load_config(path: &str) -> Result<Config> {
