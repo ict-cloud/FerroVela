@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.4] - Unreleased
+
+### Changed
+- Configuration is now stored in `~/Library/Application Support/com.ictcloud.ferrovela/config.json` instead of the current working directory.
+- A default `config.json` (blank settings) is bundled inside the app as `Contents/Resources/config.json`. On first launch, it is automatically copied to the user config location.
+- The `--config` CLI flag is now optional; when omitted the platform default path is used.
+
 ## [0.3.3]
 
 ### Changed
