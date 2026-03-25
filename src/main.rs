@@ -16,8 +16,8 @@ mod tests;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, default_value = "config.json")]
-    config: String,
+    #[arg(short, long)]
+    config: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -29,13 +29,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
     let args = Args::parse();
 
+    let config_path = args
+        .config
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(config::default_config_path);
+
+    if let Err(e) = config::ensure_user_config(&config_path) {
+        eprintln!("Warning: Could not initialise config file: {}.", e);
+    }
+
+    let config_str = config_path.to_string_lossy().into_owned();
+
     // Single Instance Check / IPC via Proxy Port (Default 3128)
     // We try to connect to the default port. If we can talk to our proxy, we signal it to show UI.
     // If not (connection refused, or not our proxy), we start a new instance.
 
     // Note: If the user changed the port in config, we should check THAT port.
     // So we should load config first.
-    let config_port = match config::load_config(&args.config) {
+    let config_port = match config::load_config(&config_str) {
         Ok(c) => c.proxy.port,
         Err(_) => config::default_port(), // Default fallback
     };
@@ -65,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // Run the UI
-    match ui::run_ui(args.config) {
+    match ui::run_ui(config_str) {
         Ok(_) => Ok(()),
         Err(e) => {
             error!("UI Error: {}", e);

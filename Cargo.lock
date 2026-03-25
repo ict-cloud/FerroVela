@@ -72,23 +72,21 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "android-activity"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef6978589202a00cd7e118380c448a08b6ed394c3a8df3a430d0898e3a42d046"
+checksum = "0f2a1bb052857d5dd49572219344a7332b31b76405648eabac5bc68978251bcd"
 dependencies = [
  "android-properties",
  "bitflags 2.11.0",
  "cc",
- "cesu8",
- "jni",
- "jni-sys 0.3.0",
+ "jni 0.22.4",
  "libc",
  "log",
  "ndk",
  "ndk-context",
  "ndk-sys",
  "num_enum",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1485,7 +1483,7 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "ferrovela"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -1731,7 +1729,7 @@ dependencies = [
 [[package]]
 name = "g3-build-env"
 version = "0.2.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "rustc_version",
 ]
@@ -1739,7 +1737,7 @@ dependencies = [
 [[package]]
 name = "g3-cert-agent"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "arcstr",
@@ -1758,7 +1756,7 @@ dependencies = [
 [[package]]
 name = "g3-codec"
 version = "0.1.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "g3-std-ext",
  "g3-types",
@@ -1770,7 +1768,7 @@ dependencies = [
 [[package]]
 name = "g3-compat"
 version = "0.2.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "libc",
  "rustix 1.1.4",
@@ -1780,7 +1778,7 @@ dependencies = [
 [[package]]
 name = "g3-daemon"
 version = "0.4.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1820,7 +1818,7 @@ dependencies = [
 [[package]]
 name = "g3-datetime"
 version = "0.2.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "chrono",
 ]
@@ -1828,7 +1826,7 @@ dependencies = [
 [[package]]
 name = "g3-dpi"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "fixedbitset",
  "fnv",
@@ -1840,7 +1838,7 @@ dependencies = [
 [[package]]
 name = "g3-fluentd"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1865,7 +1863,7 @@ dependencies = [
 [[package]]
 name = "g3-ftp-client"
 version = "0.5.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1885,7 +1883,7 @@ dependencies = [
 [[package]]
 name = "g3-geoip-types"
 version = "0.2.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "ip_network",
@@ -1895,7 +1893,7 @@ dependencies = [
 [[package]]
 name = "g3-h2"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "bytes",
  "g3-http",
@@ -1909,7 +1907,7 @@ dependencies = [
 [[package]]
 name = "g3-hickory-client"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "bytes",
  "fastrand",
@@ -1927,7 +1925,7 @@ dependencies = [
 [[package]]
 name = "g3-histogram"
 version = "0.2.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "hdrhistogram",
  "portable-atomic",
@@ -1939,7 +1937,7 @@ dependencies = [
 [[package]]
 name = "g3-http"
 version = "0.5.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "atoi",
  "base64",
@@ -1958,7 +1956,7 @@ dependencies = [
 [[package]]
 name = "g3-icap-client"
 version = "0.4.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "arcstr",
@@ -1988,7 +1986,7 @@ dependencies = [
 [[package]]
 name = "g3-imap-proto"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "ahash",
  "atoi",
@@ -2003,7 +2001,7 @@ dependencies = [
 [[package]]
 name = "g3-io-ext"
 version = "0.9.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "ahash",
  "arc-swap",
@@ -2029,7 +2027,7 @@ dependencies = [
 [[package]]
 name = "g3-io-sys"
 version = "0.1.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "libc",
  "once_cell",
@@ -2039,7 +2037,7 @@ dependencies = [
 [[package]]
 name = "g3-ip-locate"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "g3-geoip-types",
@@ -2059,7 +2057,7 @@ dependencies = [
 [[package]]
 name = "g3-journal"
 version = "0.4.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "g3-types",
@@ -2077,7 +2075,7 @@ dependencies = [
 [[package]]
 name = "g3-json"
 version = "0.5.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "ascii",
@@ -2098,7 +2096,7 @@ dependencies = [
 [[package]]
 name = "g3-macros"
 version = "0.1.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2108,7 +2106,7 @@ dependencies = [
 [[package]]
 name = "g3-msgpack"
 version = "0.4.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "atoi",
@@ -2124,7 +2122,7 @@ dependencies = [
 [[package]]
 name = "g3-openssl"
 version = "0.4.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "atomic-waker",
@@ -2139,7 +2137,7 @@ dependencies = [
 [[package]]
 name = "g3-redis-client"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "g3-socket",
@@ -2155,7 +2153,7 @@ dependencies = [
 [[package]]
 name = "g3-resolver"
 version = "0.9.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2184,7 +2182,7 @@ dependencies = [
 [[package]]
 name = "g3-runtime"
 version = "0.5.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "g3-compat",
@@ -2197,7 +2195,7 @@ dependencies = [
 [[package]]
 name = "g3-slog-types"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "arcstr",
  "chrono",
@@ -2214,7 +2212,7 @@ dependencies = [
 [[package]]
 name = "g3-smtp-proto"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "g3-io-ext",
  "g3-types",
@@ -2228,7 +2226,7 @@ dependencies = [
 [[package]]
 name = "g3-socket"
 version = "0.6.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "fastrand",
  "g3-compat",
@@ -2242,7 +2240,7 @@ dependencies = [
 [[package]]
 name = "g3-socks"
 version = "0.4.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "bytes",
  "g3-io-ext",
@@ -2256,7 +2254,7 @@ dependencies = [
 [[package]]
 name = "g3-statsd-client"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "g3-io-sys",
@@ -2272,12 +2270,12 @@ dependencies = [
 [[package]]
 name = "g3-std-ext"
 version = "0.1.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 
 [[package]]
 name = "g3-stdlog"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anstyle",
  "chrono",
@@ -2292,7 +2290,7 @@ dependencies = [
 [[package]]
 name = "g3-syslog"
 version = "0.8.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2314,7 +2312,7 @@ dependencies = [
 [[package]]
 name = "g3-tls-ticket"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2334,7 +2332,7 @@ dependencies = [
 [[package]]
 name = "g3-types"
 version = "0.7.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2383,7 +2381,7 @@ dependencies = [
 [[package]]
 name = "g3-udpdump"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "g3-dpi",
@@ -2400,7 +2398,7 @@ dependencies = [
 [[package]]
 name = "g3-xcrypt"
 version = "0.3.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "constant_time_eq",
  "memchr",
@@ -2411,7 +2409,7 @@ dependencies = [
 [[package]]
 name = "g3-yaml"
 version = "0.7.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "anyhow",
  "ascii",
@@ -2436,7 +2434,7 @@ dependencies = [
 [[package]]
 name = "g3proxy"
 version = "1.13.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2529,7 +2527,7 @@ dependencies = [
 [[package]]
 name = "g3proxy-proto"
 version = "0.1.0"
-source = "git+https://github.com/bytedance/g3.git#257ded328beb50313b40f6b3eb2a8c480b8b2538"
+source = "git+https://github.com/bytedance/g3.git#18e28d0e64d6513bc9376a5f716c56814fb8022c"
 dependencies = [
  "capnp",
  "capnpc",
@@ -3355,9 +3353,9 @@ checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
 
 [[package]]
 name = "iri-string"
-version = "0.7.10"
+version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c91338f0783edbd6195decb37bae672fd3b165faffb89bf7b9e6942f8b1a731a"
+checksum = "d8e7418f59cc01c88316161279a7f665217ae316b388e58a0d10e29f54f1e5eb"
 dependencies = [
  "memchr",
  "serde",
@@ -3402,7 +3400,7 @@ dependencies = [
  "cesu8",
  "cfg-if",
  "combine",
- "jni-sys 0.3.0",
+ "jni-sys 0.3.1",
  "log",
  "thiserror 1.0.69",
  "walkdir",
@@ -3410,10 +3408,43 @@ dependencies = [
 ]
 
 [[package]]
-name = "jni-sys"
-version = "0.3.0"
+name = "jni"
+version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8eaf4bc02d17cbdd7ff4c7438cafcdf7fb9a4613313ad11b4f8fefe7d3fa0130"
+checksum = "5efd9a482cf3a427f00d6b35f14332adc7902ce91efb778580e180ff90fa3498"
+dependencies = [
+ "cfg-if",
+ "combine",
+ "jni-macros",
+ "jni-sys 0.4.1",
+ "log",
+ "simd_cesu8",
+ "thiserror 2.0.18",
+ "walkdir",
+ "windows-link",
+]
+
+[[package]]
+name = "jni-macros"
+version = "0.22.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a00109accc170f0bdb141fed3e393c565b6f5e072365c3bd58f5b062591560a3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "rustc_version",
+ "simd_cesu8",
+ "syn",
+]
+
+[[package]]
+name = "jni-sys"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41a652e1f9b6e0275df1f15b32661cf0d4b78d4d87ddec5e0c3c20f097433258"
+dependencies = [
+ "jni-sys 0.4.1",
+]
 
 [[package]]
 name = "jni-sys"
@@ -3559,9 +3590,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
-version = "0.1.14"
+version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1744e39d1d6a9948f4f388969627434e31128196de472883b39f148769bfe30a"
+checksum = "7ddbf48fd451246b1f8c2610bd3b4ac0cc6e149d89832867093ab69a17194f08"
 dependencies = [
  "bitflags 2.11.0",
  "libc",
@@ -3759,7 +3790,7 @@ dependencies = [
  "dispatch",
  "futures-channel",
  "futures-lite",
- "jni",
+ "jni 0.21.1",
  "ndk-context",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -3839,7 +3870,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4"
 dependencies = [
  "bitflags 2.11.0",
- "jni-sys 0.3.0",
+ "jni-sys 0.3.1",
  "log",
  "ndk-sys",
  "num_enum",
@@ -3859,7 +3890,7 @@ version = "0.6.0+11769913"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
- "jni-sys 0.3.0",
+ "jni-sys 0.3.1",
 ]
 
 [[package]]
@@ -5155,7 +5186,7 @@ checksum = "1d99feebc72bae7ab76ba994bb5e121b8d83d910ca40b36e0921f53becc41784"
 dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
- "jni",
+ "jni 0.21.1",
  "log",
  "once_cell",
  "rustls",
@@ -5353,6 +5384,16 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "simd_cesu8"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94f90157bb87cddf702797c5dadfa0be7d266cdf49e22da2fcaa32eff75b2c33"
+dependencies = [
+ "rustc_version",
+ "simdutf8",
 ]
 
 [[package]]
@@ -5817,18 +5858,18 @@ dependencies = [
 
 [[package]]
 name = "toml_datetime"
-version = "1.0.1+spec-1.1.0"
+version = "1.1.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b320e741db58cac564e26c607d3cc1fdc4a88fd36c879568c07856ed83ff3e9"
+checksum = "97251a7c317e03ad83774a8752a7e81fb6067740609f75ea2b585b569a59198f"
 dependencies = [
  "serde_core",
 ]
 
 [[package]]
 name = "toml_edit"
-version = "0.25.5+spec-1.1.0"
+version = "0.25.8+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ca1a40644a28bce036923f6a431df0b34236949d111cc07cb6dca830c9ef2e1"
+checksum = "16bff38f1d86c47f9ff0647e6838d7bb362522bdf44006c7068c2b1e606f1f3c"
 dependencies = [
  "indexmap",
  "toml_datetime",
@@ -5838,9 +5879,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.0.10+spec-1.1.0"
+version = "1.1.0+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7df25b4befd31c4816df190124375d5a20c6b6921e2cad937316de3fccd63420"
+checksum = "2334f11ee363607eb04df9b8fc8a13ca1715a72ba8662a26ac285c98aabb4011"
 dependencies = [
  "winnow 1.0.0",
 ]
@@ -6010,9 +6051,9 @@ checksum = "383ad40bb927465ec0ce7720e033cb4ca06912855fc35db31b5755d0de75b1ee"
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.12.0"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ccf251212114b54433ec949fd6a7841275f9ada20dddd2f29e9ceea4501493"
+checksum = "da36089a805484bcccfffe0739803392c8298778a2d2f09febf76fac5ad9025b"
 
 [[package]]
 name = "unicode-width"
