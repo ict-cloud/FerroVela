@@ -110,7 +110,11 @@ pub fn default_config_path() -> PathBuf {
 fn bundle_default_config_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     // Bundle layout: Contents/MacOS/ferrovela -> Contents/Resources/config.json
-    let candidate = exe.parent()?.parent()?.join("Resources").join("config.json");
+    let candidate = exe
+        .parent()?
+        .parent()?
+        .join("Resources")
+        .join("config.json");
     if candidate.exists() {
         Some(candidate)
     } else {
