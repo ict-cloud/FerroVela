@@ -180,12 +180,24 @@ impl ConfigEditor {
             Message::External => {
                 if let Some(id) = self.main_window_id {
                     return window::minimize(id, false).chain(window::gain_focus(id));
+                } else {
+                    let (new_id, open_task) = window::open(window::Settings {
+                        size: (800.0, 600.0).into(),
+                        ..Default::default()
+                    });
+                    self.main_window_id = Some(new_id);
+                    return open_task.map(Message::IdCaptured);
                 }
             }
             Message::WindowClosed(id) => {
                 if Some(id) == self.log_window_id {
                     self.log_window_id = None;
                     self.show_logs = false;
+                } else if Some(id) == self.main_window_id {
+                    self.main_window_id = None;
+                    if self.service_status == ServiceStatus::Stopped {
+                        return iced::exit();
+                    }
                 }
             }
             Message::WindowCloseRequested(id) => {
@@ -200,7 +212,7 @@ impl ConfigEditor {
                 }
             }
             Message::IdCaptured(id) => {
-                if self.log_window_id != Some(id) && self.main_window_id.is_none() {
+                if self.log_window_id != Some(id) && self.main_window_id != Some(id) {
                     self.main_window_id = Some(id);
                 }
             }
