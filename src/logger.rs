@@ -29,11 +29,11 @@ impl log::Log for SimpleLogger {
     }
 }
 
-pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn init_to(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("service.log")?;
+        .open(path)?;
 
     let logger = SimpleLogger {
         file: Mutex::new(file),
@@ -48,4 +48,8 @@ pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     log::set_max_level(log::LevelFilter::Info);
     Ok(())
+}
+
+pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    init_to(std::path::Path::new("service.log"))
 }

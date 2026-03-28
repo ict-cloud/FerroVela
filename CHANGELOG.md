@@ -1,11 +1,25 @@
 # Changelog
 
+## [0.4.0] - Unreleased
+
+### Added
+- Split the project into two separate binaries: `ferrovela` (headless proxy service) and `ferrovela-ui` (configuration GUI). The `iced` dependency is now optional behind a `ui` feature flag so the proxy binary can be built without it.
+- macOS launchd integration: the UI starts and stops the proxy as a user-level launchd service (`com.ictcloud.ferrovela`). The plist is installed to `~/Library/LaunchAgents/` automatically.
+- The UI can now be fully closed while the proxy service keeps running. On reopen, the toggle reflects the actual service state via periodic `launchctl` polling.
+ 
+### Changed
+- Single-instance detection switched from a TCP magic request on the proxy port to a Unix domain socket (`/tmp/ferrovela-ui.sock`), decoupling UI lifecycle from proxy state.
+- Proxy service logs are now written to `~/Library/Logs/ferrovela.log`.
+ 
+
 ## [0.3.4] - Unreleased
 
 ### Changed
 - Configuration is now stored in `~/Library/Application Support/com.ictcloud.ferrovela/config.json` instead of the current working directory.
 - A default `config.json` (blank settings) is bundled inside the app as `Contents/Resources/config.json`. On first launch, it is automatically copied to the user config location.
 - The `--config` CLI flag is now optional; when omitted the platform default path is used.
+- Single-instance detection switched from a TCP magic request on the proxy port to a Unix domain socket (`/tmp/ferrovela-ui.sock`), decoupling UI lifecycle from proxy state.
+- Proxy service logs are now written to `~/Library/Logs/ferrovela.log`.
 
 ## [0.3.3]
 

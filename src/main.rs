@@ -1,10 +1,9 @@
 use clap::Parser;
 use log::{error, info};
-use std::io::{Read, Write};
-use std::net::TcpStream;
 
 mod auth;
 mod config;
+mod launchd;
 mod logger;
 mod pac;
 mod proxy;
@@ -40,39 +39,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config_str = config_path.to_string_lossy().into_owned();
 
-    // Single Instance Check / IPC via Proxy Port (Default 3128)
-    // We try to connect to the default port. If we can talk to our proxy, we signal it to show UI.
-    // If not (connection refused, or not our proxy), we start a new instance.
-
-    // Note: If the user changed the port in config, we should check THAT port.
-    // So we should load config first.
-    let config_port = match config::load_config(&config_str) {
-        Ok(c) => c.proxy.port,
-        Err(_) => config::default_port(), // Default fallback
-    };
-
-    let addr = format!("127.0.0.1:{}", config_port);
-    info!("Checking for existing instance on {}", addr);
-
-    if let Ok(mut stream) = TcpStream::connect(&addr) {
-        // Send Magic Request
-        let request = crate::proxy::MAGIC_SHOW_REQUEST;
-        if stream.write_all(request.as_bytes()).is_ok() {
-            let mut buffer = [0; 1024];
-            if let Ok(n) = stream.read(&mut buffer) {
-                let response = String::from_utf8_lossy(&buffer[..n]);
-                if response.contains("200 OK") {
-                    info!("Existing instance found and signaled. Exiting.");
-                    return Ok(());
-                }
-            }
-        }
-        info!("Port {} is open but did not respond correctly. Starting new instance (User might need to change port).", config_port);
-    } else {
-        info!(
-            "No instance found on {}. Starting new instance.",
-            config_port
-        );
+    // Single-instance check via Unix socket.
+    // If another UI instance is already running, connecting to its socket signals it
+    // to bring itself to the front, then we exit.
+    if std::os::unix::net::UnixStream::connect(launchd::UI_SOCKET_PATH).is_ok() {
+        info!("Existing UI instance found. Signaling and exiting.");
+        return Ok(());
     }
 
     // Run the UI

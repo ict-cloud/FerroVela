@@ -1,24 +1,18 @@
 use iced::{window, Subscription, Task};
-use log::{error, info};
+use log::error;
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 
 use crate::config::{
     default_port, load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
 };
-use crate::pac::PacEngine;
-use crate::proxy::{Proxy, ProxySignal};
+use crate::launchd;
 
-use super::model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab, IPC_RECEIVER};
+use super::model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab};
 
 impl ConfigEditor {
     pub fn new_args(path: String) -> (Self, Task<Message>) {
         let config = load_config(&path).unwrap_or_default();
-
-        let (tx, rx) = mpsc::channel(32);
-        let _ = IPC_RECEIVER.set(tokio::sync::Mutex::new(Some(rx)));
 
         let (main_window_id, open_task) = window::open(window::Settings {
             size: (800.0, 600.0).into(),
@@ -55,13 +49,15 @@ impl ConfigEditor {
                 .map(|e| e.hosts.join(", "))
                 .unwrap_or_default(),
             status: String::new(),
-            service_status: ServiceStatus::Stopped,
-            proxy_handle: None,
+            service_status: if launchd::is_running() {
+                ServiceStatus::Running
+            } else {
+                ServiceStatus::Stopped
+            },
             show_logs: false,
             log_content: String::new(),
             main_window_id: Some(main_window_id),
             log_window_id: None,
-            signal_sender: tx,
         };
 
         (editor, open_task.map(Message::IdCaptured))
@@ -86,8 +82,16 @@ impl ConfigEditor {
                 self.handle_config_message(message);
                 Task::none()
             }
-            Message::ToggleService(is_running) => {
-                self.handle_toggle_service(is_running);
+            Message::ToggleService(start) => {
+                self.handle_toggle_service(start);
+                Task::none()
+            }
+            Message::PollStatus => {
+                self.service_status = if launchd::is_running() {
+                    ServiceStatus::Running
+                } else {
+                    ServiceStatus::Stopped
+                };
                 Task::none()
             }
             Message::OpenLogs
@@ -117,41 +121,29 @@ impl ConfigEditor {
         self.save_current_config();
     }
 
-    fn handle_toggle_service(&mut self, is_running: bool) {
-        if is_running {
-            let config = Arc::new(self.build_config());
-            let pac_path = config.proxy.pac_file.clone();
-            let sender = self.signal_sender.clone();
-
-            let handle = tokio::spawn(async move {
-                let pac_engine = if let Some(path) = pac_path {
-                    info!("Loading PAC file from {}", path);
-                    match PacEngine::new(&path).await {
-                        Ok(engine) => Some(engine),
-                        Err(e) => {
-                            error!("Failed to load PAC file: {}", e);
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                let proxy = Proxy::new(config.clone(), pac_engine, Some(sender));
-                if let Err(e) = proxy.run().await {
-                    error!("Proxy error: {}", e);
+    fn handle_toggle_service(&mut self, start: bool) {
+        if start {
+            match launchd::start(&self.path) {
+                Ok(()) => {
+                    self.service_status = ServiceStatus::Running;
+                    self.status = "Service started.".to_string();
                 }
-            });
-
-            self.proxy_handle = Some(handle.abort_handle());
-            self.service_status = ServiceStatus::Running;
-            self.status = "Service Started".to_string();
-        } else {
-            if let Some(handle) = self.proxy_handle.take() {
-                handle.abort();
+                Err(e) => {
+                    error!("Failed to start service: {}", e);
+                    self.status = format!("Failed to start: {e}");
+                }
             }
-            self.service_status = ServiceStatus::Stopped;
-            self.status = "Service Stopped".to_string();
+        } else {
+            match launchd::stop() {
+                Ok(()) => {
+                    self.service_status = ServiceStatus::Stopped;
+                    self.status = "Service stopped.".to_string();
+                }
+                Err(e) => {
+                    error!("Failed to stop service: {}", e);
+                    self.status = format!("Failed to stop: {e}");
+                }
+            }
         }
     }
 
@@ -195,21 +187,18 @@ impl ConfigEditor {
                     self.show_logs = false;
                 } else if Some(id) == self.main_window_id {
                     self.main_window_id = None;
-                    if self.service_status == ServiceStatus::Stopped {
-                        return iced::exit();
-                    }
+                    // The proxy runs as a launchd service, so exit the UI
+                    // regardless of service state.
+                    let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
+                    return iced::exit();
                 }
             }
             Message::WindowCloseRequested(id) => {
                 if Some(id) == self.log_window_id {
                     self.log_window_id = None;
                     self.show_logs = false;
-                    return window::close(id);
-                } else if self.service_status == ServiceStatus::Running {
-                    return window::minimize(id, true);
-                } else {
-                    return window::close(id);
                 }
+                return window::close(id);
             }
             Message::IdCaptured(id) => {
                 if self.log_window_id != Some(id) && self.main_window_id != Some(id) {
@@ -307,7 +296,7 @@ impl ConfigEditor {
                     if let Err(e) = entry.set_password(password) {
                         error!("Failed to save password to keyring: {}", e);
                     } else {
-                        info!("Saved password to keyring for '{}'", username);
+                        log::info!("Saved password to keyring for '{}'", username);
                     }
                 }
                 Err(_) => error!("Failed to create keyring entry for '{}'", username),
@@ -338,7 +327,8 @@ impl ConfigEditor {
     }
 
     pub fn load_logs(&mut self) {
-        if let Ok(mut file) = std::fs::File::open("service.log") {
+        let log_path = launchd::log_path();
+        if let Ok(mut file) = std::fs::File::open(&log_path) {
             if let Ok(metadata) = file.metadata() {
                 let offset = metadata.len().saturating_sub(10_000);
                 if file.seek(SeekFrom::Start(offset)).is_ok() {
@@ -362,7 +352,10 @@ impl ConfigEditor {
             Subscription::none()
         };
 
-        let ipc = Subscription::run(ipc_stream);
+        let status_poll =
+            iced::time::every(Duration::from_secs(3)).map(|_| Message::PollStatus);
+
+        let ipc = Subscription::run(ui_show_stream);
 
         let events = iced::event::listen_with(|event, _status, id| match event {
             iced::Event::Window(window::Event::CloseRequested) => {
@@ -373,30 +366,42 @@ impl ConfigEditor {
             _ => None,
         });
 
-        Subscription::batch(vec![tick, ipc, events])
+        Subscription::batch(vec![tick, status_poll, ipc, events])
     }
 }
 
 // ---------------------------------------------------------------------------
-// IPC stream
+// Unix socket IPC stream — yields Message::External when a second instance
+// connects, signalling this instance to bring its window to the front.
 // ---------------------------------------------------------------------------
 
-fn ipc_stream() -> impl iced::futures::Stream<Item = Message> {
-    iced::futures::stream::unfold((), |_| async {
-        if let Some(lock) = IPC_RECEIVER.get() {
-            let mut guard = lock.lock().await;
-            if let Some(rx) = guard.as_mut() {
-                if let Some(cmd) = rx.recv().await {
-                    match cmd {
-                        ProxySignal::Show => return Some((Message::External, ())),
+fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
+    use tokio::net::UnixListener;
+
+    iced::futures::stream::unfold(
+        Option::<UnixListener>::None,
+        |state| async move {
+            let listener = match state {
+                Some(l) => l,
+                None => {
+                    // Remove any stale socket file, then bind.
+                    let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
+                    match UnixListener::bind(launchd::UI_SOCKET_PATH) {
+                        Ok(l) => l,
+                        Err(_) => {
+                            std::future::pending::<()>().await;
+                            return None;
+                        }
                     }
                 }
+            };
+
+            match listener.accept().await {
+                Ok(_) => Some((Message::External, Some(listener))),
+                Err(_) => None,
             }
-        }
-        // Receiver is missing or the channel was closed — suspend forever.
-        std::future::pending::<()>().await;
-        None
-    })
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------

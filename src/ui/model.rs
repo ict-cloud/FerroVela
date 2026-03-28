@@ -1,12 +1,5 @@
-use crate::proxy::ProxySignal;
 use iced::window;
 use std::fmt;
-use std::sync::OnceLock;
-use tokio::sync::{mpsc, Mutex};
-use tokio::task::AbortHandle;
-
-/// Global receiver for IPC commands sent by a second instance of the app.
-pub static IPC_RECEIVER: OnceLock<Mutex<Option<mpsc::Receiver<ProxySignal>>>> = OnceLock::new();
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -88,6 +81,7 @@ pub enum Message {
     ExceptionsHostsChanged(String),
     // Service
     ToggleService(bool),
+    PollStatus,
     // Log window
     OpenLogs,
     OpenLogsAt(Option<iced::Point>),
@@ -125,13 +119,10 @@ pub struct ConfigEditor {
     pub status: String,
     // Service control
     pub service_status: ServiceStatus,
-    pub proxy_handle: Option<AbortHandle>,
     // Log window
     pub show_logs: bool,
     pub log_content: String,
     // Window management
     pub main_window_id: Option<window::Id>,
     pub log_window_id: Option<window::Id>,
-    // IPC channel to the running Proxy task
-    pub signal_sender: mpsc::Sender<ProxySignal>,
 }
