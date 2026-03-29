@@ -107,8 +107,13 @@ Configuration can also be manually managed through a `config.json` file.
 2.  **Install Dependencies**:
     -   On Ubuntu/Debian: `sudo apt-get install libkrb5-dev libgssapi-krb5-2`
     -   On MacOS: usually installed by default (via Xcode Command Line Tools).
-3.  **Build**: `cargo build --release`
-4.  **Run**: `./target/release/ferrovela`
+3.  **Install cargo-bundle**: `cargo install cargo-bundle`
+4.  **Build the app bundle**:
+    ```bash
+    ./bundle.sh
+    ```
+    This builds both binaries, creates the macOS app bundle, and copies the proxy service into it. The resulting bundle is at `target/release/bundle/osx/FerroVela.app`.
+5.  **Run**: Open `FerroVela.app` or run `./target/release/ferrovela-ui` directly.
 
 ## Performance Testing
 
@@ -137,10 +142,10 @@ Requests Per Second (RPS): 6248.71
 
 ## Dependencies
 
-- `pingora`: For proxying and low-level HTTP handling.
+- `g3proxy`: Proxy engine for upstream chaining (ByteDance).
 - `tokio`: Asynchronous runtime.
 - `musli`: Configuration parsing and serialization (JSON format).
-- `boa_engine`: Pure Rust JavaScript engine for PAC file evaluation.
+- `rquickjs`: JavaScript engine for PAC file evaluation.
 - `reqwest`: HTTP client for remote PAC file fetching (DIRECT, no-proxy).
 - `iced`: For the graphical user interface.
 - `libgssapi`: For Kerberos/GSSAPI integration.
@@ -150,24 +155,3 @@ Requests Per Second (RPS): 6248.71
 
 See [CHANGELOG.md](CHANGELOG.md) for a detailed list of changes.
 
-## Running as a Service on MacOS
-
-To run FerroVela as a background service on MacOS using `launchd`, you can use the provided installation script.
-
-1.  **Run the install script**:
-    ```bash
-    ./service/macos/install.sh
-    ```
-
-    This script will:
-    -   Build the release binary.
-    -   Install the binary to `~/.local/bin/ferrovela`.
-    -   Install the configuration to `~/.config/ferrovela/config.json` (if not already present).
-    -   Create and load a `launchd` plist at `~/Library/LaunchAgents/com.ferrovela.plist`.
-
-2.  **Manage the service**:
-    -   **Stop**: `launchctl unload ~/Library/LaunchAgents/com.ferrovela.plist`
-    -   **Start**: `launchctl load ~/Library/LaunchAgents/com.ferrovela.plist`
-    -   **Logs**: Check `/tmp/ferrovela.log` and `/tmp/ferrovela.err`.
-
-Ensure `~/.local/bin` is in your `PATH` if you want to run `ferrovela` manually from the command line.

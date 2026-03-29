@@ -22,13 +22,14 @@ pub fn log_path() -> PathBuf {
     home().join("Library").join("Logs").join("ferrovela.log")
 }
 
-/// Finds the `ferrovela` proxy binary, preferring the directory of the running executable.
-fn proxy_exe() -> PathBuf {
-    std::env::current_exe()
+/// Finds the `ferrovela` proxy binary in the same directory as the running executable.
+fn proxy_exe() -> Result<PathBuf> {
+    let path = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join("ferrovela")))
         .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("ferrovela"))
+        .context("proxy binary not found next to the running executable")?;
+    Ok(path)
 }
 
 fn uid() -> String {
@@ -48,10 +49,10 @@ fn xml_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn generate_plist(config_path: &str) -> String {
-    let exe = proxy_exe();
+fn generate_plist(config_path: &str) -> Result<String> {
+    let exe = proxy_exe()?;
     let log = log_path();
-    format!(
+    Ok(format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -79,11 +80,11 @@ fn generate_plist(config_path: &str) -> String {
         exe = xml_escape(&exe.to_string_lossy()),
         config = xml_escape(config_path),
         log = xml_escape(&log.to_string_lossy()),
-    )
+    ))
 }
 
 fn install(config_path: &str) -> Result<()> {
-    let plist = generate_plist(config_path);
+    let plist = generate_plist(config_path)?;
     let path = plist_path();
     std::fs::create_dir_all(path.parent().unwrap())
         .context("creating LaunchAgents directory")?;

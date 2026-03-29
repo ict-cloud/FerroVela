@@ -6,10 +6,13 @@
 - Split the project into two separate binaries: `ferrovela` (headless proxy service) and `ferrovela-ui` (configuration GUI). The `iced` dependency is now optional behind a `ui` feature flag so the proxy binary can be built without it.
 - macOS launchd integration: the UI starts and stops the proxy as a user-level launchd service (`com.ictcloud.ferrovela`). The plist is installed to `~/Library/LaunchAgents/` automatically.
 - The UI can now be fully closed while the proxy service keeps running. On reopen, the toggle reflects the actual service state via periodic `launchctl` polling.
- 
+- The proxy binary is now included in the macOS app bundle (`Contents/MacOS/ferrovela`). The launchd plist is generated dynamically at startup with the resolved bundle path, so the app is fully self-contained.
+- Added `bundle.sh` build script that builds both binaries, runs `cargo bundle`, and copies the proxy binary into the app bundle.
+
 ### Changed
 - Single-instance detection switched from a TCP magic request on the proxy port to a Unix domain socket (`/tmp/ferrovela-ui.sock`), decoupling UI lifecycle from proxy state.
 - Proxy service logs are now written to `~/Library/Logs/ferrovela.log`.
+- `proxy_exe()` now returns an error instead of silently falling back when the proxy binary is not found next to the running executable.
  
 
 ## [0.3.4] - Unreleased
