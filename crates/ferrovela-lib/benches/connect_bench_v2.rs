@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use ferrovela::config::{Config, ExceptionsConfig, ProxyConfig, UpstreamConfig};
-use ferrovela::proxy::resolve_proxy;
+use ferrovela_lib::config::{Config, ExceptionsConfig, ProxyConfig, UpstreamConfig};
+use ferrovela_lib::proxy::resolve_proxy;
 use std::hint::black_box;
 use std::sync::Arc;
 

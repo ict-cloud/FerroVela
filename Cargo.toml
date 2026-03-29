@@ -1,88 +1,19 @@
-[package]
-name = "ferrovela"
-version = "0.3.4"
-edition = "2021"
+[workspace]
+members = [
+    "crates/ferrovela-lib",
+    "crates/ferrovela",
+    "crates/ferrovela-ui",
+    "crates/ferrovela-app",
+]
+resolver = "2"
 
-[features]
-default = ["ui"]
-ui = ["dep:iced"]
-
-[dependencies]
-# Core async runtime - using only needed features instead of 'full'
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
-bytes = "1"
-log = "0.4"
+[workspace.dependencies]
 anyhow = "1"
-# For PAC file execution
-rquickjs = { version = "0.11", features = ["bindgen"] }
-
-base64 = "0.22"
-
-# Async HTTP client without blocking feature
-reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
-iced = { version = "0.14", features = ["tokio"], optional = true }
-libgssapi = { version = "0.9", default-features = false }
-ntlmclient = "0.2.*"
-memchr = "2.8.*"
-glob = "0.3.*"
-g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares", "vendored-openssl"] }
-g3-daemon = { git = "https://github.com/bytedance/g3.git", version = "0.4.*", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 keyring = "3.6.*"
-core-foundation = "0.10"
-core-foundation-sys = "0.8"
-
-[lib]
-name = "ferrovela"
-path = "src/lib.rs"
-
-[[bin]]
-name = "ferrovela-ui"
-path = "src/main.rs"
-required-features = ["ui"]
-
-[package.metadata.bundle.bin.ferrovela-ui]
-identifier = "com.ictcloud.ferrovela"
-name = "FerroVela"
-icon = ["assets/icon.icns"]
-copyright = "Copyright (c) 2026 Pascal Rudnik"
-category = "public.app-category.utilities"
-short_description = "Small forward proxy for enterprise settings."
-long_description = "Small forward proxy for enterprise settings with extensive functionality."
-
-[[bin]]
-name = "ferrovela"
-path = "src/bin/proxy.rs"
 
 [profile.release]
-opt-level = "s" # or "z"
+opt-level = "s"
 codegen-units = 1
-lto = "thin" #alternatives "fat" or "false"
+lto = "thin"
 strip = "debuginfo"
-
-[dev-dependencies]
-tempfile = "3.25.0"
-criterion = { version = "0.8", features = ["async_tokio"] }
-
-[[bench]]
-name = "connect_bench"
-harness = false
-
-[[bench]]
-name = "subsequence_bench"
-harness = false
-path = "benches/subsequence_bench.rs"
-
-[[bench]]
-name = "parse_content_length_bench"
-harness = false
-path = "benches/parse_content_length_bench.rs"
-
-[[bench]]
-name = "request_bench"
-harness = false
-path = "benches/request_bench.rs"
-
-[[bench]]
-name = "connect_bench_v2"
-harness = false
-path = "benches/connect_bench_v2.rs"

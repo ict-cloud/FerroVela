@@ -3,10 +3,10 @@ use log::error;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
 
-use crate::config::{
+use ferrovela_lib::config::{
     default_port, load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
 };
-use crate::launchd;
+use ferrovela_lib::launchd;
 
 use super::model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab};
 

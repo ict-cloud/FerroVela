@@ -1,10 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-cargo build --release
-cargo bundle --bin ferrovela-ui --release
+cargo build --release -p ferrovela -p ferrovela-ui -p ferrovela-app
+cargo bundle --bin ferrovela-app --release
 
 BUNDLE="target/release/bundle/osx/FerroVela.app/Contents/MacOS"
 cp target/release/ferrovela "$BUNDLE/"
+cp target/release/ferrovela-ui "$BUNDLE/"
 
 echo "Bundle ready: target/release/bundle/osx/FerroVela.app"

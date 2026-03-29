@@ -1,7 +1,7 @@
 use log::error;
 use std::sync::Arc;
 
-use ferrovela::{config, launchd, logger, pac::PacEngine, proxy::Proxy};
+use ferrovela_lib::{config, launchd, logger, pac::PacEngine, proxy::Proxy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

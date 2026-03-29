@@ -1472,6 +1472,23 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 name = "ferrovela"
 version = "0.3.4"
 dependencies = [
+ "ferrovela-lib",
+ "log",
+ "tokio",
+]
+
+[[package]]
+name = "ferrovela-app"
+version = "0.3.4"
+dependencies = [
+ "anyhow",
+ "ferrovela-lib",
+]
+
+[[package]]
+name = "ferrovela-lib"
+version = "0.3.4"
+dependencies = [
  "anyhow",
  "base64",
  "bytes",
@@ -1481,7 +1498,6 @@ dependencies = [
  "g3-daemon",
  "g3proxy",
  "glob",
- "iced",
  "keyring",
  "libgssapi",
  "log",
@@ -1490,6 +1506,17 @@ dependencies = [
  "reqwest",
  "rquickjs",
  "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "ferrovela-ui"
+version = "0.3.4"
+dependencies = [
+ "ferrovela-lib",
+ "iced",
+ "keyring",
+ "log",
  "tokio",
 ]
 

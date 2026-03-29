@@ -11,5 +11,3 @@ mod performance_tests;
 mod ssrf_tests;
 #[cfg(test)]
 mod streaming_benchmark;
-#[cfg(test)]
-mod ui_tests;

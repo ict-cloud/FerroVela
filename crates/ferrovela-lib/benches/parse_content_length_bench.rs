@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use ferrovela::proxy::http_utils::parse_content_length;
+use ferrovela_lib::proxy::http_utils::parse_content_length;
 use std::hint::black_box;
 
 fn bench_parse_content_length(c: &mut Criterion) {

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::config;
-    use crate::ui::{AuthType, ConfigEditor, Message};
+    use ferrovela_lib::config;
+    use ferrovela_lib::ui::{AuthType, ConfigEditor, Message};
 
     fn reset_preferences() {
         config::save_config(&config::Config::default()).unwrap();
