@@ -86,8 +86,7 @@ fn generate_plist(config_path: &str) -> Result<String> {
 fn install(config_path: &str) -> Result<()> {
     let plist = generate_plist(config_path)?;
     let path = plist_path();
-    std::fs::create_dir_all(path.parent().unwrap())
-        .context("creating LaunchAgents directory")?;
+    std::fs::create_dir_all(path.parent().unwrap()).context("creating LaunchAgents directory")?;
     std::fs::write(&path, plist).context("writing plist file")?;
     Ok(())
 }
@@ -97,14 +96,21 @@ pub fn start(config_path: &str) -> Result<()> {
     let uid = uid();
     let plist = plist_path();
     let out = Command::new("launchctl")
-        .args(["bootstrap", &format!("gui/{uid}"), plist.to_str().unwrap_or("")])
+        .args([
+            "bootstrap",
+            &format!("gui/{uid}"),
+            plist.to_str().unwrap_or(""),
+        ])
         .output()
         .context("running launchctl bootstrap")?;
     if out.status.success() {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        Err(anyhow::anyhow!("launchctl bootstrap failed: {}", stderr.trim()))
+        Err(anyhow::anyhow!(
+            "launchctl bootstrap failed: {}",
+            stderr.trim()
+        ))
     }
 }
 
@@ -118,7 +124,10 @@ pub fn stop() -> Result<()> {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        Err(anyhow::anyhow!("launchctl bootout failed: {}", stderr.trim()))
+        Err(anyhow::anyhow!(
+            "launchctl bootout failed: {}",
+            stderr.trim()
+        ))
     }
 }
 

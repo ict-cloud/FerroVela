@@ -352,8 +352,7 @@ impl ConfigEditor {
             Subscription::none()
         };
 
-        let status_poll =
-            iced::time::every(Duration::from_secs(3)).map(|_| Message::PollStatus);
+        let status_poll = iced::time::every(Duration::from_secs(3)).map(|_| Message::PollStatus);
 
         let ipc = Subscription::run(ui_show_stream);
 
@@ -378,30 +377,27 @@ impl ConfigEditor {
 fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
     use tokio::net::UnixListener;
 
-    iced::futures::stream::unfold(
-        Option::<UnixListener>::None,
-        |state| async move {
-            let listener = match state {
-                Some(l) => l,
-                None => {
-                    // Remove any stale socket file, then bind.
-                    let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
-                    match UnixListener::bind(launchd::UI_SOCKET_PATH) {
-                        Ok(l) => l,
-                        Err(_) => {
-                            std::future::pending::<()>().await;
-                            return None;
-                        }
+    iced::futures::stream::unfold(Option::<UnixListener>::None, |state| async move {
+        let listener = match state {
+            Some(l) => l,
+            None => {
+                // Remove any stale socket file, then bind.
+                let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
+                match UnixListener::bind(launchd::UI_SOCKET_PATH) {
+                    Ok(l) => l,
+                    Err(_) => {
+                        std::future::pending::<()>().await;
+                        return None;
                     }
                 }
-            };
-
-            match listener.accept().await {
-                Ok(_) => Some((Message::External, Some(listener))),
-                Err(_) => None,
             }
-        },
-    )
+        };
+
+        match listener.accept().await {
+            Ok(_) => Some((Message::External, Some(listener))),
+            Err(_) => None,
+        }
+    })
 }
 
 // ---------------------------------------------------------------------------
