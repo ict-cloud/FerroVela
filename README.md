@@ -8,9 +8,10 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 -   **Protocol Support**: Routes both HTTP (GET, POST, etc.) and HTTPS (CONNECT) traffic efficiently.
 - **Smart Exceptions**: configure exceptions based on domains, glob patterns, or IP addresses.
 - **Corporate Authentication**: Supports Basic, NTLM, and Kerberos authentication for upstream proxies.
-- **Developer Friendly**: 
+- **MDM Ready**: Configuration stored via macOS CFPreferences — deploy settings across a fleet with `.mobileconfig` profiles.
+- **Developer Friendly**:
     - Easy debugging with detailed logging.
-    - Simple configuration via a JSON file.
+    - Simple configuration via the GUI or `defaults` command.
 
 ## Configuration
 
@@ -30,76 +31,76 @@ FerroVela supports multiple authentication methods for upstream proxies:
 #### NTLM
 
 To use NTLM authentication:
-1. Set `"auth_type": "ntlm"` in `config.json`.
-2. Provide `username`, `password`, `domain`, and `workstation`.
+1. Set `upstream_auth_type` to `ntlm`.
+2. Provide `upstream_username`, `upstream_password`, `upstream_domain`, and `upstream_workstation`.
 
-```json
-{
-  "upstream": {
-    "auth_type": "ntlm",
-    "username": "user",
-    "password": "password",
-    "domain": "CORP",
-    "workstation": "MYPC",
-    "proxy_url": "http://proxy.corp.com:8080"
-  }
-}
+```bash
+defaults write com.ictcloud.ferrovela upstream_auth_type -string "ntlm"
+defaults write com.ictcloud.ferrovela upstream_username -string "user"
+defaults write com.ictcloud.ferrovela upstream_password -string "password"
+defaults write com.ictcloud.ferrovela upstream_domain -string "CORP"
+defaults write com.ictcloud.ferrovela upstream_workstation -string "MYPC"
+defaults write com.ictcloud.ferrovela upstream_proxy_url -string "http://proxy.corp.com:8080"
 ```
 
 #### Kerberos
 
 To use Kerberos authentication:
 1. Ensure your machine is joined to the domain or you have a valid Kerberos ticket (obtainable via `kinit`).
-2. Set `"auth_type": "kerberos"` in `config.json`.
+2. Set `upstream_auth_type` to `kerberos`.
 3. FerroVela will automatically use the cached credentials (TGT) to authenticate with the upstream proxy using SPNEGO.
 
-```json
-{
-  "upstream": {
-    "auth_type": "kerberos",
-    "proxy_url": "http://proxy.corp.com:8080"
-  }
-}
+```bash
+defaults write com.ictcloud.ferrovela upstream_auth_type -string "kerberos"
+defaults write com.ictcloud.ferrovela upstream_proxy_url -string "http://proxy.corp.com:8080"
 ```
 
 #### Basic
 
 To use Basic authentication:
 
-```json
-{
-  "upstream": {
-    "auth_type": "basic",
-    "username": "user",
-    "password": "password",
-    "proxy_url": "http://proxy.corp.com:8080"
-  }
-}
+```bash
+defaults write com.ictcloud.ferrovela upstream_auth_type -string "basic"
+defaults write com.ictcloud.ferrovela upstream_username -string "user"
+defaults write com.ictcloud.ferrovela upstream_password -string "password"
+defaults write com.ictcloud.ferrovela upstream_proxy_url -string "http://proxy.corp.com:8080"
 ```
 
 ### Manual Configuration
 
-Configuration can also be manually managed through a `config.json` file.
+Configuration is stored in macOS preferences under the `com.ictcloud.ferrovela` domain. You can read and write settings using the `defaults` command:
 
-```json
-{
-  "proxy": {
-    "port": 3128,
-    "pac_file": "http://wpad/wpad.dat"
-  },
-  "upstream": {
-    "auth_type": "ntlm",
-    "username": "user",
-    "password": "password",
-    "domain": "CORP",
-    "workstation": "WORKSTATION",
-    "proxy_url": "http://upstream:8080"
-  },
-  "exceptions": {
-    "hosts": ["localhost", "127.0.0.1", "*.local"]
-  }
-}
+```bash
+# Set proxy port and PAC file
+defaults write com.ictcloud.ferrovela proxy_port -int 3128
+defaults write com.ictcloud.ferrovela proxy_pac_file -string "http://wpad/wpad.dat"
+
+# Set exceptions
+defaults write com.ictcloud.ferrovela exceptions_hosts -array "localhost" "127.0.0.1" "*.local"
+
+# Read current configuration
+defaults read com.ictcloud.ferrovela
 ```
+
+### MDM Deployment
+
+For fleet-wide configuration, create a `.mobileconfig` profile targeting the `com.ictcloud.ferrovela` preference domain. MDM-managed (forced) preferences automatically override user-set values.
+
+Available preference keys:
+
+| Key | Type | Description |
+|---|---|---|
+| `proxy_port` | Integer | Local proxy port (default: 3128) |
+| `proxy_pac_file` | String | URL or path to PAC file |
+| `proxy_allow_private_ips` | Boolean | Allow proxying to private IPs |
+| `upstream_auth_type` | String | `none`, `basic`, `ntlm`, or `kerberos` |
+| `upstream_username` | String | Upstream proxy username |
+| `upstream_password` | String | Upstream proxy password |
+| `upstream_use_keyring` | Boolean | Store password in system keychain |
+| `upstream_domain` | String | NTLM domain |
+| `upstream_workstation` | String | NTLM workstation |
+| `upstream_proxy_url` | String | Upstream proxy URL |
+| `exceptions_hosts` | Array of String | Hosts to bypass proxy |
 
 ## Building and Running
 
@@ -144,7 +145,7 @@ Requests Per Second (RPS): 6248.71
 
 - `g3proxy`: Proxy engine for upstream chaining (ByteDance).
 - `tokio`: Asynchronous runtime.
-- `musli`: Configuration parsing and serialization (JSON format).
+- `core-foundation`: macOS CFPreferences integration for configuration storage.
 - `rquickjs`: JavaScript engine for PAC file evaluation.
 - `reqwest`: HTTP client for remote PAC file fetching (DIRECT, no-proxy).
 - `iced`: For the graphical user interface.

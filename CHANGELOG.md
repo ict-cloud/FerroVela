@@ -8,19 +8,23 @@
 - The UI can now be fully closed while the proxy service keeps running. On reopen, the toggle reflects the actual service state via periodic `launchctl` polling.
 - The proxy binary is now included in the macOS app bundle (`Contents/MacOS/ferrovela`). The launchd plist is generated dynamically at startup with the resolved bundle path, so the app is fully self-contained.
 - Added `bundle.sh` build script that builds both binaries, runs `cargo bundle`, and copies the proxy binary into the app bundle.
+- **MDM support**: Configuration is now stored via macOS CFPreferences (`com.ictcloud.ferrovela` domain) instead of a JSON file. MDM administrators can push configuration profiles (`.mobileconfig`) to manage proxy settings across a fleet. Managed (forced) preferences automatically override user-set values.
 
 ### Changed
 - Single-instance detection switched from a TCP magic request on the proxy port to a Unix domain socket (`/tmp/ferrovela-ui.sock`), decoupling UI lifecycle from proxy state.
 - Proxy service logs are now written to `~/Library/Logs/ferrovela.log`.
 - `proxy_exe()` now returns an error instead of silently falling back when the proxy binary is not found next to the running executable.
+- Configuration storage migrated from JSON file (`config.json`) to macOS CFPreferences. Settings can be read and written via `defaults read/write com.ictcloud.ferrovela`.
+- The `--config` CLI flag has been removed from both binaries; configuration is read from CFPreferences automatically.
+
+### Removed
+- `config.json` file and JSON-based configuration. The bundled `Contents/Resources/config.json` resource is no longer included.
+- `musli` and `clap` dependencies (replaced by `core-foundation` / `core-foundation-sys`).
  
 
 ## [0.3.4] - Unreleased
 
 ### Changed
-- Configuration is now stored in `~/Library/Application Support/com.ictcloud.ferrovela/config.json` instead of the current working directory.
-- A default `config.json` (blank settings) is bundled inside the app as `Contents/Resources/config.json`. On first launch, it is automatically copied to the user config location.
-- The `--config` CLI flag is now optional; when omitted the platform default path is used.
 - Single-instance detection switched from a TCP magic request on the proxy port to a Unix domain socket (`/tmp/ferrovela-ui.sock`), decoupling UI lifecycle from proxy state.
 - Proxy service logs are now written to `~/Library/Logs/ferrovela.log`.
 
