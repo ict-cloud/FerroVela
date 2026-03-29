@@ -49,7 +49,7 @@ fn xml_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn generate_plist(config_path: &str) -> Result<String> {
+fn generate_plist() -> Result<String> {
     let exe = proxy_exe()?;
     let log = log_path();
     Ok(format!(
@@ -62,8 +62,6 @@ fn generate_plist(config_path: &str) -> Result<String> {
 	<key>ProgramArguments</key>
 	<array>
 		<string>{exe}</string>
-		<string>--config</string>
-		<string>{config}</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>
@@ -78,21 +76,20 @@ fn generate_plist(config_path: &str) -> Result<String> {
 "#,
         label = SERVICE_LABEL,
         exe = xml_escape(&exe.to_string_lossy()),
-        config = xml_escape(config_path),
         log = xml_escape(&log.to_string_lossy()),
     ))
 }
 
-fn install(config_path: &str) -> Result<()> {
-    let plist = generate_plist(config_path)?;
+fn install() -> Result<()> {
+    let plist = generate_plist()?;
     let path = plist_path();
     std::fs::create_dir_all(path.parent().unwrap()).context("creating LaunchAgents directory")?;
     std::fs::write(&path, plist).context("writing plist file")?;
     Ok(())
 }
 
-pub fn start(config_path: &str) -> Result<()> {
-    install(config_path)?;
+pub fn start() -> Result<()> {
+    install()?;
     let uid = uid();
     let plist = plist_path();
     let out = Command::new("launchctl")

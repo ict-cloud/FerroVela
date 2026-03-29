@@ -7,9 +7,9 @@ pub use model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab};
 
 use iced::window;
 
-pub fn run_ui(config_path: String) -> iced::Result {
+pub fn run_ui() -> iced::Result {
     iced::daemon(
-        move || ConfigEditor::new_args(config_path.clone()),
+        ConfigEditor::new_args,
         ConfigEditor::update,
         ConfigEditor::view,
     )

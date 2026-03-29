@@ -11,8 +11,8 @@ use crate::launchd;
 use super::model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab};
 
 impl ConfigEditor {
-    pub fn new_args(path: String) -> (Self, Task<Message>) {
-        let config = load_config(&path).unwrap_or_default();
+    pub fn new_args() -> (Self, Task<Message>) {
+        let config = load_config();
 
         let (main_window_id, open_task) = window::open(window::Settings {
             size: (800.0, 600.0).into(),
@@ -21,7 +21,6 @@ impl ConfigEditor {
 
         let upstream = config.upstream.as_ref();
         let editor = Self {
-            path,
             active_tab: Tab::Proxy,
             proxy_port: config.proxy.port.to_string(),
             pac_file: config.proxy.pac_file.unwrap_or_default(),
@@ -123,7 +122,7 @@ impl ConfigEditor {
 
     fn handle_toggle_service(&mut self, start: bool) {
         if start {
-            match launchd::start(&self.path) {
+            match launchd::start() {
                 Ok(()) => {
                     self.service_status = ServiceStatus::Running;
                     self.status = "Service started.".to_string();
@@ -187,8 +186,6 @@ impl ConfigEditor {
                     self.show_logs = false;
                 } else if Some(id) == self.main_window_id {
                     self.main_window_id = None;
-                    // The proxy runs as a launchd service, so exit the UI
-                    // regardless of service state.
                     let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
                     return iced::exit();
                 }
@@ -269,7 +266,7 @@ impl ConfigEditor {
 
     fn save_current_config(&mut self) {
         let config = self.build_config();
-        match save_config(&self.path, &config) {
+        match save_config(&config) {
             Ok(_) => {
                 self.status = "Saved successfully!".to_string();
                 self.sync_keyring();
@@ -302,7 +299,6 @@ impl ConfigEditor {
                 Err(_) => error!("Failed to create keyring entry for '{}'", username),
             }
         } else {
-            // Keyring disabled — clear any previously stored credential.
             if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
                 let _ = entry.delete_credential();
             }
@@ -370,8 +366,7 @@ impl ConfigEditor {
 }
 
 // ---------------------------------------------------------------------------
-// Unix socket IPC stream — yields Message::External when a second instance
-// connects, signalling this instance to bring its window to the front.
+// Unix socket IPC stream
 // ---------------------------------------------------------------------------
 
 fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
@@ -381,7 +376,6 @@ fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
         let listener = match state {
             Some(l) => l,
             None => {
-                // Remove any stale socket file, then bind.
                 let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
                 match UnixListener::bind(launchd::UI_SOCKET_PATH) {
                     Ok(l) => l,
@@ -404,7 +398,6 @@ fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Returns `Some(trimmed)` if `s` is non-empty after trimming, else `None`.
 fn non_empty_trimmed(s: &str) -> Option<String> {
     let trimmed = s.trim();
     if trimmed.is_empty() {

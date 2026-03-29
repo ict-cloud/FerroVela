@@ -98,7 +98,6 @@ pub enum Message {
 // ---------------------------------------------------------------------------
 
 pub struct ConfigEditor {
-    pub path: String,
     // Navigation
     pub active_tab: Tab,
     // Proxy tab
