@@ -62,7 +62,6 @@ strip = "debuginfo"
 [dev-dependencies]
 tempfile = "3.25.0"
 criterion = { version = "0.8", features = ["async_tokio"] }
-musli = { version = "0.0.149", features = ["storage"] }
 
 [[bench]]
 name = "connect_bench"
@@ -82,11 +81,6 @@ path = "benches/parse_content_length_bench.rs"
 name = "request_bench"
 harness = false
 path = "benches/request_bench.rs"
-
-[[bench]]
-name = "musli_vs_serde_bench"
-harness = false
-path = "benches/musli_vs_serde_bench.rs"
 
 [[bench]]
 name = "connect_bench_v2"

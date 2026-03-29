@@ -9,6 +9,7 @@ mod tests {
 
     #[test]
     fn test_ui_initialization() {
+        let _lock = config::PREFS_LOCK.lock().unwrap();
         reset_preferences();
         let (editor, _) = ConfigEditor::new_args();
 
@@ -20,6 +21,7 @@ mod tests {
 
     #[test]
     fn test_ui_updates() {
+        let _lock = config::PREFS_LOCK.lock().unwrap();
         reset_preferences();
         let (mut editor, _) = ConfigEditor::new_args();
 
@@ -30,10 +32,14 @@ mod tests {
         // Test Auth Type Change
         let _ = editor.update(Message::UpstreamAuthTypeChanged(AuthType::Basic));
         assert_eq!(editor.upstream_auth_type, AuthType::Basic);
+
+        // Clean up
+        reset_preferences();
     }
 
     #[test]
     fn test_save_config() {
+        let _lock = config::PREFS_LOCK.lock().unwrap();
         reset_preferences();
         let (mut editor, _) = ConfigEditor::new_args();
 

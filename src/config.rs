@@ -340,6 +340,11 @@ pub fn save_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
+/// Mutex that serialises all tests touching CFPreferences so they cannot
+/// race against each other.  Used by both `config::tests` and `tests::ui_tests`.
+#[cfg(test)]
+pub static PREFS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,6 +395,7 @@ mod tests {
 
     #[test]
     fn test_config_round_trip_via_cfpreferences() {
+        let _lock = PREFS_LOCK.lock().unwrap();
         reset_preferences();
         let config = Config {
             proxy: ProxyConfig {
@@ -436,6 +442,7 @@ mod tests {
 
     #[test]
     fn test_default_config_load() {
+        let _lock = PREFS_LOCK.lock().unwrap();
         reset_preferences();
         // With no preferences set, should return defaults
         let config = load_config();
