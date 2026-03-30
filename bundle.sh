@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cargo build --release -p ferrovela -p ferrovela-ui -p ferrovela-app
-cargo bundle --bin ferrovela-app --release
+cargo bundle -p ferrovela-app --release
 
 BUNDLE="target/release/bundle/osx/FerroVela.app/Contents/MacOS"
 cp target/release/ferrovela "$BUNDLE/"

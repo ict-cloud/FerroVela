@@ -341,8 +341,7 @@ pub fn save_config(config: &Config) -> Result<()> {
 }
 
 /// Mutex that serialises all tests touching CFPreferences so they cannot
-/// race against each other.  Used by both `config::tests` and `tests::ui_tests`.
-#[cfg(test)]
+/// race against each other.  Used by both `config::tests` and UI crate tests.
 pub static PREFS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
