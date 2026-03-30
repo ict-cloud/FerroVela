@@ -5,96 +5,51 @@ on:
     branches:
       - master
       - develop
+      - dev
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: "Cargo check"
-    runs-on: "ubuntu-latest"
-    steps:
-      - name: "Check out the repo"
-        uses: actions/checkout@v4
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
-      - uses: "actions-rs/toolchain@v1"
-        with:
-          profile: "minimal"
-          toolchain: "stable"
-          override: true
-
-      - uses: "actions-rs/cargo@v1"
-        with:
-          command: "check"
-
-  test:
-    name: "Cargo test"
-    runs-on: "ubuntu-latest"
-    steps:
-      - name: "Check out the repo"
-        uses: actions/checkout@v4
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
-      - uses: "actions-rs/toolchain@v1"
-        with:
-          profile: "minimal"
-          toolchain: "stable"
-          override: true
-
-      - uses: "actions-rs/cargo@v1"
-        with:
-          command: "test"
-
   fmt:
-    name: "Cargo format"
-    runs-on: "ubuntu-latest"
+    name: "Format"
+    runs-on: ubuntu-latest
     steps:
-      - name: "Check out the repo"
-        uses: actions/checkout@v4
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
-
-      - uses: "actions-rs/toolchain@v1"
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          profile: "minimal"
-          toolchain: "stable"
-          override: true
-
-      - run: "rustup component add rustfmt"
-
-      - uses: "actions-rs/cargo@v1"
-        with:
-          command: "fmt"
-          args: "--all -- --check"
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
   clippy:
-    name: "Cargo clippy"
-    runs-on: "ubuntu-latest"
+    name: "Clippy"
+    needs: fmt
+    runs-on: macos-latest
     steps:
-      - name: "Check out the repo"
-        uses: actions/checkout@v4
-      - name: Install build dependencies
+      - uses: actions/checkout@v4
+      - name: Install Cap'n Proto
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libkrb5-dev libgssapi-krb5-2 capnproto
+          brew update
+          brew install capnp
 
-      - uses: "actions-rs/toolchain@v1"
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          profile: "minimal"
-          toolchain: "stable"
-          override: true
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace -- -D warnings
 
-      - run: "rustup component add clippy"
+  test:
+    name: "Test"
+    needs: fmt
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Cap'n Proto
+        run: |
+          brew update
+          brew install capnp
 
-      - uses: "actions-rs/cargo@v1"
-        with:
-          command: "clippy"
-          args: "-- -D warnings"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace

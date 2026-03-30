@@ -1,0 +1,11 @@
+[package]
+name = "ferrovela-ui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ferrovela-lib = { path = "../ferrovela-lib" }
+iced = { version = "0.14", features = ["tokio"] }
+keyring.workspace = true
+log = "0.4"
+tokio.workspace = true

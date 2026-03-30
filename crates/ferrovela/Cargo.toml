@@ -1,0 +1,9 @@
+[package]
+name = "ferrovela"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ferrovela-lib = { path = "../ferrovela-lib" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+log = "0.4"

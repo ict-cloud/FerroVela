@@ -1,0 +1,54 @@
+[package]
+name = "ferrovela-lib"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
+bytes = "1"
+log = "0.4"
+anyhow.workspace = true
+rquickjs = { version = "0.11", features = ["bindgen"] }
+base64 = "0.22"
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+libgssapi = { version = "0.9", default-features = false }
+ntlmclient = "0.2.*"
+memchr = "2.8.*"
+glob = "0.3.*"
+g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", default-features = false, features = ["vendored-c-ares", "vendored-openssl"] }
+g3-daemon = { git = "https://github.com/bytedance/g3.git", version = "0.4.*", default-features = false }
+keyring.workspace = true
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+
+[dev-dependencies]
+tempfile = "3.25.0"
+criterion = { version = "0.8", features = ["async_tokio"] }
+
+[lib]
+name = "ferrovela_lib"
+path = "src/lib.rs"
+
+[[bench]]
+name = "connect_bench"
+harness = false
+
+[[bench]]
+name = "subsequence_bench"
+harness = false
+path = "benches/subsequence_bench.rs"
+
+[[bench]]
+name = "parse_content_length_bench"
+harness = false
+path = "benches/parse_content_length_bench.rs"
+
+[[bench]]
+name = "request_bench"
+harness = false
+path = "benches/request_bench.rs"
+
+[[bench]]
+name = "connect_bench_v2"
+harness = false
+path = "benches/connect_bench_v2.rs"
