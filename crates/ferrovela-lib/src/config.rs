@@ -282,10 +282,11 @@ fn load_upstream_config() -> Option<UpstreamConfig> {
     let proxy_url = read_cf_string("upstream_proxy_url");
 
     // Only construct UpstreamConfig if at least one meaningful field is set
-    if auth_type.as_deref() == Some("none") || auth_type.as_deref() == None {
-        if username.is_none() && proxy_url.is_none() {
-            return None;
-        }
+    if (auth_type.as_deref() == Some("none") || auth_type.is_none())
+        && username.is_none()
+        && proxy_url.is_none()
+    {
+        return None;
     }
 
     Some(UpstreamConfig {
