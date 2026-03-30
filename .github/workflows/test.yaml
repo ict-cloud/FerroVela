@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - develop
+      - dev
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
