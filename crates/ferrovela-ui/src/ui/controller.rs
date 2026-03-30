@@ -298,10 +298,8 @@ impl ConfigEditor {
                 }
                 Err(_) => error!("Failed to create keyring entry for '{}'", username),
             }
-        } else {
-            if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
-                let _ = entry.delete_credential();
-            }
+        } else if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
+            let _ = entry.delete_credential();
         }
     }
 
