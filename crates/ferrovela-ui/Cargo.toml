@@ -1,7 +1,7 @@
 [package]
 name = "ferrovela-ui"
-version = "0.3.4"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 ferrovela-lib = { path = "../ferrovela-lib" }
