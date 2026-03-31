@@ -42,7 +42,7 @@ pub fn default_port() -> u16 {
     3128
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UpstreamConfig {
     pub auth_type: String,
     pub username: Option<String>,
@@ -51,6 +51,20 @@ pub struct UpstreamConfig {
     pub domain: Option<String>,
     pub workstation: Option<String>,
     pub proxy_url: Option<String>,
+}
+
+impl std::fmt::Debug for UpstreamConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpstreamConfig")
+            .field("auth_type", &self.auth_type)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field("use_keyring", &self.use_keyring)
+            .field("domain", &self.domain)
+            .field("workstation", &self.workstation)
+            .field("proxy_url", &self.proxy_url.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 impl Default for UpstreamConfig {

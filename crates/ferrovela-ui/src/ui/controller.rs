@@ -293,10 +293,10 @@ impl ConfigEditor {
                     if let Err(e) = entry.set_password(password) {
                         error!("Failed to save password to keyring: {}", e);
                     } else {
-                        log::info!("Saved password to keyring for '{}'", username);
+                        log::info!("Saved password to keyring");
                     }
                 }
-                Err(_) => error!("Failed to create keyring entry for '{}'", username),
+                Err(e) => error!("Failed to create keyring entry: {}", e),
             }
         } else if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
             let _ = entry.delete_credential();

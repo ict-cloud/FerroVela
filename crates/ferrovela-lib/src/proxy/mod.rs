@@ -240,7 +240,7 @@ server:
         };
 
         let Some(raw_addr) = proxy_addr_from_url(proxy_url) else {
-            warn!("could not parse proxy URL '{}'; falling back to direct", proxy_url);
+            warn!("could not parse proxy URL (value redacted); falling back to direct");
             return Self::direct_fixed_yaml();
         };
         let addr = yaml_escape(&raw_addr);

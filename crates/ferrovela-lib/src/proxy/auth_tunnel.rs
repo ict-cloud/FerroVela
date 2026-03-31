@@ -190,9 +190,9 @@ pub async fn perform_authenticated_connect(
         };
 
         debug!(
-            "round {}: sending Proxy-Authorization: {}",
+            "round {}: sending Proxy-Authorization scheme: {}",
             round,
-            &auth_header[..auth_header.find(' ').unwrap_or(auth_header.len()).min(20)]
+            auth_header.split_whitespace().next().unwrap_or("(unknown)")
         );
 
         send_connect(&mut upstream, target, Some(&auth_header)).await?;
