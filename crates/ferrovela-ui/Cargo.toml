@@ -3,6 +3,15 @@ name = "ferrovela-ui"
 version.workspace = true
 edition.workspace = true
 
+[package.metadata.bundle]
+identifier = "com.ictcloud.ferrovela"
+name = "FerroVela"
+icon = ["crates/ferrovela-ui/assets/icon.icns"]
+copyright = "Copyright (c) 2026 Pascal Rudnik"
+category = "public.app-category.utilities"
+short_description = "Small forward proxy for enterprise settings."
+long_description = "Small forward proxy for enterprise settings with extensive functionality."
+
 [dependencies]
 ferrovela-lib = { path = "../ferrovela-lib" }
 iced = { version = "0.14", features = ["tokio"] }
