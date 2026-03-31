@@ -4,6 +4,7 @@
 
 ### Security
 - Fixed YAML injection vulnerability in g3proxy config generation: upstream credentials (`username`, `password`) and the proxy address were embedded into a YAML string via `format!()` without escaping, allowing a specially crafted password to break out of the YAML scalar and inject arbitrary configuration keys. All three values are now passed through a `yaml_escape()` function that escapes `"`, `\`, `\n`, `\r`, `\t`, and null before interpolation.
+- Replaced the predictable g3proxy config temp file path (`/tmp/ferrovela_g3proxy.yaml`) with a `NamedTempFile` created via `tempfile::Builder`. The file now has a random suffix, is created with mode 0600 (owner read/write only), and is deleted immediately after g3proxy has parsed the config into memory, eliminating the predictable-path race and symlink-attack vectors.
 - Enforced the `proxy_allow_private_ips` config flag (previously defined but never checked). CONNECT requests to private/loopback IP ranges (RFC 1918, 127.0.0.0/8, 169.254.0.0/16, ::1, fc00::/7, fe80::/10) are now rejected with 403 Forbidden at both enforcement points: the auth tunnel direct-connect path and the g3proxy splice path. Set `proxy_allow_private_ips = true` to restore direct access to internal networks.
 
 ## [0.4.1] - 31. Mar 2026

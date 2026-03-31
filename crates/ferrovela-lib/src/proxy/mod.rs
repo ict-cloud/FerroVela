@@ -83,10 +83,19 @@ impl Proxy {
             port
         };
 
-        // Build and write g3proxy YAML config.
+        // Build and write g3proxy YAML config to a secure temporary file.
+        //
+        // `NamedTempFile` creates the file with mode 0600 (owner read/write only)
+        // and a random suffix, preventing both symlink attacks and predictable-path
+        // races.  The file is deleted automatically when `tmp` is dropped, which
+        // happens after `g3proxy::config::load()` has parsed the config into memory.
         let yaml = self.build_g3proxy_yaml(internal_port);
-        let config_path = std::env::temp_dir().join("ferrovela_g3proxy.yaml");
-        std::fs::write(&config_path, &yaml)?;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("ferrovela_g3proxy_")
+            .suffix(".yaml")
+            .tempfile()?;
+        std::io::Write::write_all(&mut tmp, yaml.as_bytes())?;
+        let config_path = tmp.path().to_path_buf();
         debug!(
             "g3proxy config written to {} (internal port {})",
             config_path.display(),
@@ -99,6 +108,9 @@ impl Proxy {
 
         // Parse YAML into g3proxy's global registries.
         g3proxy::config::load().map_err(|e| format!("g3proxy config load failed: {e}"))?;
+
+        // Config is now in memory — delete the temp file immediately.
+        drop(tmp);
 
         // Spawn all sub-systems in dependency order.
         g3proxy::resolve::spawn_all()
