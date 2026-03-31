@@ -21,6 +21,27 @@ pub enum ProxySignal {
     Show,
 }
 
+/// Escapes a string for safe embedding inside a YAML double-quoted scalar.
+///
+/// YAML double-quoted scalars use backslash escape sequences (YAML 1.2 §7.3.1).
+/// Without escaping, a value containing `"` or `\n` can break out of the scalar
+/// and inject arbitrary YAML keys — a config-injection vulnerability.
+fn yaml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\0' => out.push_str("\\0"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 pub struct Proxy {
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
@@ -186,14 +207,16 @@ server:
             return Self::direct_fixed_yaml();
         };
 
-        let addr = proxy_url
-            .trim_start_matches("http://")
-            .trim_start_matches("https://");
+        let addr = yaml_escape(
+            proxy_url
+                .trim_start_matches("http://")
+                .trim_start_matches("https://"),
+        );
 
         match upstream.auth_type.as_str() {
             "basic" => {
-                let user = upstream.username.as_deref().unwrap_or("");
-                let pass = upstream.password.as_deref().unwrap_or("");
+                let user = yaml_escape(upstream.username.as_deref().unwrap_or(""));
+                let pass = yaml_escape(upstream.password.as_deref().unwrap_or(""));
                 format!(
                     r#"  - name: default
     type: ProxyHttp
@@ -304,6 +327,55 @@ async fn handle_connection(
 }
 
 // ─── proxy resolution (PAC / static config) ───────────────────────────────────
+
+#[cfg(test)]
+mod yaml_escape_tests {
+    use super::yaml_escape;
+
+    #[test]
+    fn passthrough_normal_strings() {
+        assert_eq!(yaml_escape("proxy.example.com:8080"), "proxy.example.com:8080");
+        assert_eq!(yaml_escape("user@domain.com"), "user@domain.com");
+        assert_eq!(yaml_escape(""), "");
+    }
+
+    #[test]
+    fn escapes_double_quote() {
+        // A quote without escaping would terminate the YAML scalar early.
+        assert_eq!(yaml_escape(r#"pass"word"#), r#"pass\"word"#);
+    }
+
+    #[test]
+    fn escapes_backslash() {
+        assert_eq!(yaml_escape(r"C:\path"), r"C:\\path");
+    }
+
+    #[test]
+    fn escapes_newline_and_carriage_return() {
+        assert_eq!(yaml_escape("line1\nline2"), r"line1\nline2");
+        assert_eq!(yaml_escape("line1\r\nline2"), r"line1\r\nline2");
+    }
+
+    #[test]
+    fn injection_attempt_is_neutralised() {
+        // Without escaping, a password containing `"` or `\n` would break out of the
+        // YAML double-quoted scalar and inject arbitrary config keys.
+        let malicious = "secret\"\n    injected_key: injected_value\n    x: \"";
+        let escaped = yaml_escape(malicious);
+
+        // No raw newlines remain — they are replaced with the two-char sequence `\n`.
+        assert!(!escaped.contains('\n'));
+        // Every `"` is preceded by `\` — no unescaped double-quotes remain.
+        assert!(!escaped.contains("\"\n") && !escaped.starts_with('"'));
+
+        // Exact expected output: backslash-escaped quotes and `\n` escape sequences.
+        // In a raw string literal r#"..."#, `\"` is backslash+quote and `\n` is backslash+n.
+        assert_eq!(
+            escaped,
+            r#"secret\"\n    injected_key: injected_value\n    x: \""#
+        );
+    }
+}
 
 pub async fn resolve_proxy(
     target: &str,

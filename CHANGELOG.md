@@ -1,6 +1,11 @@
 # Changelog
 
-## [0.4.0] - Unreleased
+## [0.4.2] - Unreleased
+
+### Security
+- Fixed YAML injection vulnerability in g3proxy config generation: upstream credentials (`username`, `password`) and the proxy address were embedded into a YAML string via `format!()` without escaping, allowing a specially crafted password to break out of the YAML scalar and inject arbitrary configuration keys. All three values are now passed through a `yaml_escape()` function that escapes `"`, `\`, `\n`, `\r`, `\t`, and null before interpolation.
+
+## [0.4.1] - 31. Mar 2026
 
 ### Added
 - Split the project into two separate binaries: `ferrovela` (headless proxy service) and `ferrovela-ui` (configuration GUI). The `iced` dependency is now optional behind a `ui` feature flag so the proxy binary can be built without it.
