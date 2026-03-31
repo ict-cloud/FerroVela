@@ -6,9 +6,21 @@ use rquickjs::{Context, Function, Runtime};
 use std::fs;
 use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::sync::{mpsc, oneshot};
+
+/// Timeout for fetching a remote PAC file.
+const PAC_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Maximum accepted PAC file size (1 MiB).  Prevents OOM from unexpectedly
+/// large responses or local files.
+pub(crate) const PAC_MAX_BYTES: usize = 1024 * 1024;
+
+/// Maximum time allowed for a single `FindProxyForURL` evaluation.
+/// Enforced via the QuickJS interrupt handler so that an infinite loop in
+/// a PAC script cannot spin a worker thread forever.
+const PAC_EVAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct PacEngine {
@@ -162,27 +174,91 @@ fn register_pac_functions(ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {
     Ok(())
 }
 
+/// Fetch a PAC file over HTTP/HTTPS.
+///
+/// Uses a 30-second connect+read timeout and refuses bodies larger than
+/// [`PAC_MAX_BYTES`].  The caller's choice of scheme (http vs https) is
+/// preserved — no automatic upgrade is applied.  The connection is always
+/// made DIRECT (no proxy) to avoid the circular-dependency problem.
+async fn fetch_pac_script(url: &str) -> Result<String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(PAC_FETCH_TIMEOUT)
+        .build()
+        .context("Failed to build HTTP client for PAC fetch")?;
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .context("Failed to fetch PAC file")?;
+
+    // Reject oversized responses before downloading the body.
+    if let Some(len) = response.content_length() {
+        if len > PAC_MAX_BYTES as u64 {
+            anyhow::bail!(
+                "PAC file too large: Content-Length {} bytes (limit {} bytes)",
+                len,
+                PAC_MAX_BYTES
+            );
+        }
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .context("Failed to read PAC file response body")?;
+
+    if bytes.len() > PAC_MAX_BYTES {
+        anyhow::bail!(
+            "PAC file too large: {} bytes (limit {} bytes)",
+            bytes.len(),
+            PAC_MAX_BYTES
+        );
+    }
+
+    String::from_utf8(bytes.to_vec()).context("PAC file is not valid UTF-8")
+}
+
+/// Validate `script` by evaluating it in a throw-away QuickJS context and
+/// confirming that `FindProxyForURL` is defined.
+///
+/// Called synchronously from `PacEngine::new` before worker threads are
+/// spawned so that broken or empty PAC files are rejected immediately
+/// rather than surfacing as per-request errors later.
+fn validate_pac_script(script: &str) -> Result<()> {
+    let rt = Runtime::new().context("Failed to create JS runtime for PAC validation")?;
+    let ctx = Context::full(&rt).context("Failed to create JS context for PAC validation")?;
+    ctx.with(|ctx| {
+        register_pac_functions(&ctx).context("Failed to register PAC helper functions")?;
+        ctx.eval::<(), _>(script)
+            .map_err(|e| anyhow::anyhow!("PAC script syntax error: {}", e))?;
+        ctx.globals()
+            .get::<_, Function>("FindProxyForURL")
+            .map_err(|_| anyhow::anyhow!("PAC script does not define FindProxyForURL"))?;
+        Ok(())
+    })
+}
+
 impl PacEngine {
     pub async fn new(pac_url_or_path: &str) -> Result<Self> {
         let script = if pac_url_or_path.starts_with("http") {
-            // PAC files must always be fetched with a DIRECT connection (no proxy),
-            // otherwise we'd have a circular dependency: needing the proxy config
-            // to fetch the file that provides proxy config.
-            // We also disable TLS to ensure plain HTTP works for WPAD/PAC URLs.
-            let client = reqwest::Client::builder()
-                .no_proxy()
-                .build()
-                .context("Failed to build HTTP client for PAC fetch")?;
-            client
-                .get(pac_url_or_path)
-                .send()
-                .await?
-                .text()
-                .await
-                .context("Failed to fetch PAC file")?
+            fetch_pac_script(pac_url_or_path).await?
         } else {
-            fs::read_to_string(pac_url_or_path).context("Failed to read PAC file")?
+            let bytes =
+                fs::read(pac_url_or_path).context("Failed to read PAC file")?;
+            if bytes.len() > PAC_MAX_BYTES {
+                anyhow::bail!(
+                    "PAC file too large: {} bytes (limit {} bytes)",
+                    bytes.len(),
+                    PAC_MAX_BYTES
+                );
+            }
+            String::from_utf8(bytes).context("PAC file is not valid UTF-8")?
         };
+
+        // Fail fast: reject the script before spawning any worker threads.
+        validate_pac_script(&script)?;
 
         // PAC evaluation is quick (sub-millisecond) so a small pool suffices.
         // Cap at 4 workers to avoid wasting memory on 8 MB stacks (one per core
@@ -221,10 +297,27 @@ impl PacEngine {
                         }
                     };
 
+                    // Per-worker evaluation deadline.  Set just before calling
+                    // FindProxyForURL, cleared immediately after.  The interrupt
+                    // handler is invoked by QuickJS periodically during execution
+                    // and aborts the call when the deadline is reached, preventing
+                    // an infinite-loop PAC script from hanging the worker thread.
+                    let eval_deadline: Arc<Mutex<Option<std::time::Instant>>> =
+                        Arc::new(Mutex::new(None));
+                    let deadline_for_handler = Arc::clone(&eval_deadline);
+                    rt.set_interrupt_handler(Some(Box::new(move || {
+                        deadline_for_handler
+                            .lock()
+                            .ok()
+                            .and_then(|guard| *guard)
+                            .map_or(false, |deadline| std::time::Instant::now() >= deadline)
+                    })));
+
                     ctx.with(|ctx| {
                         if let Err(e) = register_pac_functions(&ctx) {
                             error!("Failed to register PAC functions: {}", e);
                         }
+                        // Script was already validated; an error here is unexpected.
                         if let Err(e) = ctx.eval::<(), _>(script_clone.as_str()) {
                             error!("Failed to evaluate PAC script: {}", e);
                         }
@@ -235,6 +328,11 @@ impl PacEngine {
                         let host = req.host;
                         let respond_to = req.respond_to;
 
+                        // Arm the timeout for this evaluation.
+                        if let Ok(mut guard) = eval_deadline.lock() {
+                            *guard = Some(std::time::Instant::now() + PAC_EVAL_TIMEOUT);
+                        }
+
                         let result = ctx.with(|ctx| -> Result<String> {
                             let func = ctx
                                 .globals()
@@ -242,8 +340,13 @@ impl PacEngine {
                                 .map_err(|e| anyhow::anyhow!("JS Error: {}", e))?;
 
                             func.call::<_, String>((url.as_str(), host.as_str()))
-                                .map_err(|e| anyhow::anyhow!("JS Error: {}", e))
+                                .map_err(|e| anyhow::anyhow!("PAC evaluation error: {}", e))
                         });
+
+                        // Disarm the timeout.
+                        if let Ok(mut guard) = eval_deadline.lock() {
+                            *guard = None;
+                        }
 
                         let _ = respond_to.send(result);
                     }
@@ -617,17 +720,60 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_find_proxy_invalid_script() {
+    async fn test_pac_invalid_script_rejected_at_load() {
         let pac_script = "this is not valid javascript {{{";
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), pac_script).unwrap();
 
-        // PacEngine::new succeeds (errors are logged, not propagated on init)
-        // but find_proxy should fail because FindProxyForURL is not defined.
+        // Invalid scripts are now rejected at load time, not deferred to the
+        // first find_proxy call.
+        let result = PacEngine::new(tmp.path().to_str().unwrap()).await;
+        assert!(result.is_err(), "expected PacEngine::new to fail for invalid script");
+    }
+
+    #[tokio::test]
+    async fn test_pac_missing_find_proxy_for_url_rejected() {
+        // Valid JS but no FindProxyForURL — should be rejected at load time.
+        let pac_script = "function unrelated() { return 'DIRECT'; }";
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), pac_script).unwrap();
+
+        let result = PacEngine::new(tmp.path().to_str().unwrap()).await;
+        assert!(result.is_err(), "expected rejection when FindProxyForURL is absent");
+        assert!(
+            result.err().unwrap().to_string().contains("FindProxyForURL"),
+            "error message should name the missing function"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pac_file_too_large_rejected() {
+        // A file exceeding PAC_MAX_BYTES must be rejected before workers are spawned.
+        let big = "x".repeat(super::PAC_MAX_BYTES + 1);
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), big).unwrap();
+
+        let result = PacEngine::new(tmp.path().to_str().unwrap()).await;
+        assert!(result.is_err(), "expected rejection for oversized PAC file");
+    }
+
+    #[tokio::test]
+    async fn test_pac_eval_timeout_kills_infinite_loop() {
+        // A PAC script that loops forever must be interrupted by the eval timeout
+        // and return an error rather than hanging the worker.
+        let pac_script = r#"
+            function FindProxyForURL(url, host) {
+                while (true) {}
+                return "DIRECT";
+            }
+        "#;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), pac_script).unwrap();
+
         let engine = PacEngine::new(tmp.path().to_str().unwrap()).await.unwrap();
         let result = engine
             .find_proxy("http://example.com/", "example.com")
             .await;
-        assert!(result.is_err());
+        assert!(result.is_err(), "infinite-loop PAC script must time out");
     }
 }
