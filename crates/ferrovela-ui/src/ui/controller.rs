@@ -34,7 +34,7 @@ impl ConfigEditor {
             upstream_password: upstream
                 .and_then(|u| u.password.clone())
                 .unwrap_or_default(),
-            upstream_use_keyring: upstream.map(|u| u.use_keyring).unwrap_or(false),
+            upstream_use_keyring: upstream.map(|u| u.use_keyring).unwrap_or(true),
             upstream_domain: upstream.and_then(|u| u.domain.clone()).unwrap_or_default(),
             upstream_workstation: upstream
                 .and_then(|u| u.workstation.clone())
