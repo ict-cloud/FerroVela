@@ -186,7 +186,7 @@ impl ConfigEditor {
                     self.show_logs = false;
                 } else if Some(id) == self.main_window_id {
                     self.main_window_id = None;
-                    let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
+                    let _ = std::fs::remove_file(launchd::ui_socket_path());
                     return iced::exit();
                 }
             }
@@ -368,16 +368,30 @@ impl ConfigEditor {
 // ---------------------------------------------------------------------------
 
 fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
+    use std::os::unix::fs::PermissionsExt;
     use tokio::net::UnixListener;
 
     iced::futures::stream::unfold(Option::<UnixListener>::None, |state| async move {
         let listener = match state {
             Some(l) => l,
             None => {
-                let _ = std::fs::remove_file(launchd::UI_SOCKET_PATH);
-                match UnixListener::bind(launchd::UI_SOCKET_PATH) {
-                    Ok(l) => l,
-                    Err(_) => {
+                let path = launchd::ui_socket_path();
+                let _ = std::fs::remove_file(&path);
+                match UnixListener::bind(&path) {
+                    Ok(l) => {
+                        // Restrict the socket to owner read/write only.
+                        // On macOS, AF_UNIX socket permissions ARE enforced by the
+                        // kernel — 0600 prevents other users from connecting at all.
+                        if let Err(e) = std::fs::set_permissions(
+                            &path,
+                            std::fs::Permissions::from_mode(0o600),
+                        ) {
+                            log::warn!("could not set socket permissions: {e}");
+                        }
+                        l
+                    }
+                    Err(e) => {
+                        log::error!("failed to bind UI socket: {e}");
                         std::future::pending::<()>().await;
                         return None;
                     }
@@ -385,11 +399,44 @@ fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
             }
         };
 
-        match listener.accept().await {
-            Ok(_) => Some((Message::External, Some(listener))),
-            Err(_) => None,
+        // Accept loop: skip connections from other users rather than broadcasting
+        // the show-window signal to any local process that can reach the socket.
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    if peer_is_owner(&stream) {
+                        return Some((Message::External, Some(listener)));
+                    }
+                    log::warn!("rejected IPC connection from unexpected peer UID");
+                    // Drop `stream` and wait for the next connection.
+                }
+                Err(e) => {
+                    log::error!("UI socket accept error: {e}");
+                    return None;
+                }
+            }
         }
     })
+}
+
+/// Returns `true` when the peer on `stream` has the same effective UID as the
+/// current process.  Uses `getpeereid(2)`, which is available on macOS/BSD.
+fn peer_is_owner(stream: &tokio::net::UnixStream) -> bool {
+    use std::os::unix::io::AsRawFd;
+    let fd = stream.as_raw_fd();
+    let mut peer_uid: libc::uid_t = libc::uid_t::MAX;
+    let mut peer_gid: libc::gid_t = libc::gid_t::MAX;
+    // SAFETY: fd is valid for the lifetime of this call; pointers are stack-allocated.
+    if unsafe { libc::getpeereid(fd, &mut peer_uid, &mut peer_gid) } != 0 {
+        log::debug!(
+            "getpeereid failed: {}",
+            std::io::Error::last_os_error()
+        );
+        return false;
+    }
+    // SAFETY: geteuid() is always safe to call.
+    let own_uid = unsafe { libc::geteuid() };
+    peer_uid == own_uid
 }
 
 // ---------------------------------------------------------------------------

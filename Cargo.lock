@@ -1500,6 +1500,7 @@ dependencies = [
  "ferrovela-lib",
  "iced",
  "keyring",
+ "libc",
  "log",
  "tokio",
 ]

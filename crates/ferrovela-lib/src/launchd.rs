@@ -3,7 +3,27 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub const SERVICE_LABEL: &str = "com.ictcloud.ferrovela";
-pub const UI_SOCKET_PATH: &str = "/tmp/ferrovela-ui.sock";
+
+/// Returns the path to the UI IPC socket.
+///
+/// On macOS, `$TMPDIR` is a per-user, per-session directory managed by launchd
+/// (e.g. `/var/folders/…/T/`).  It is not world-writable, so other users cannot
+/// even reach the socket.  The socket file itself is additionally created with
+/// mode `0600` by the UI process.
+pub fn ui_socket_path() -> std::path::PathBuf {
+    let dir = std::env::var_os("TMPDIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            // Fallback for environments where TMPDIR is unset.
+            let p = home()
+                .join("Library")
+                .join("Application Support")
+                .join(SERVICE_LABEL);
+            let _ = std::fs::create_dir_all(&p);
+            p
+        });
+    dir.join(format!("{SERVICE_LABEL}.sock"))
+}
 
 fn home() -> PathBuf {
     std::env::var("HOME")

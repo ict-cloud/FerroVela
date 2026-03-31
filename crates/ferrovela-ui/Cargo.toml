@@ -16,5 +16,6 @@ long_description = "Small forward proxy for enterprise settings with extensive f
 ferrovela-lib = { path = "../ferrovela-lib" }
 iced = { version = "0.14", features = ["tokio"] }
 keyring.workspace = true
+libc = "0.2"
 log = "0.4"
 tokio.workspace = true
