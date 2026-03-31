@@ -19,6 +19,7 @@ g3proxy = { git = "https://github.com/bytedance/g3.git", version = "1.13.*", def
 g3-daemon = { git = "https://github.com/bytedance/g3.git", version = "0.4.*", default-features = false }
 keyring.workspace = true
 tempfile = "3.25.0"
+url = "2"
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 

@@ -22,6 +22,25 @@ pub enum ProxySignal {
     Show,
 }
 
+/// Extracts `host:port` from a proxy URL for use in g3proxy configuration.
+///
+/// Handles all URL forms correctly:
+/// - Strips scheme and userinfo (`http://user:pass@host:port` → `host:port`)
+/// - Re-adds brackets for IPv6 literals (`http://[::1]:8080` → `[::1]:8080`)
+/// - Falls back to the scheme's default port when no port is explicit
+///
+/// Returns `None` if the URL cannot be parsed or has no host.
+fn proxy_addr_from_url(proxy_url: &str) -> Option<String> {
+    let u = url::Url::parse(proxy_url).ok()?;
+    let port = u.port_or_known_default()?;
+    // `host()` returns a typed enum; using it avoids double-bracketing IPv6
+    // addresses since `host_str()` already includes brackets in its output.
+    match u.host()? {
+        url::Host::Ipv6(addr) => Some(format!("[{}]:{}", addr, port)),
+        host => Some(format!("{}:{}", host, port)),
+    }
+}
+
 /// Escapes a string for safe embedding inside a YAML double-quoted scalar.
 ///
 /// YAML double-quoted scalars use backslash escape sequences (YAML 1.2 §7.3.1).
@@ -220,11 +239,11 @@ server:
             return Self::direct_fixed_yaml();
         };
 
-        let addr = yaml_escape(
-            proxy_url
-                .trim_start_matches("http://")
-                .trim_start_matches("https://"),
-        );
+        let Some(raw_addr) = proxy_addr_from_url(proxy_url) else {
+            warn!("could not parse proxy URL '{}'; falling back to direct", proxy_url);
+            return Self::direct_fixed_yaml();
+        };
+        let addr = yaml_escape(&raw_addr);
 
         match upstream.auth_type.as_str() {
             "basic" => {
@@ -358,6 +377,58 @@ async fn handle_connection(
 }
 
 // ─── proxy resolution (PAC / static config) ───────────────────────────────────
+
+#[cfg(test)]
+mod proxy_addr_tests {
+    use super::proxy_addr_from_url;
+
+    #[test]
+    fn standard_http_url() {
+        assert_eq!(
+            proxy_addr_from_url("http://proxy.corp.com:8080"),
+            Some("proxy.corp.com:8080".to_string())
+        );
+    }
+
+    #[test]
+    fn strips_userinfo() {
+        // Userinfo must not leak into g3proxy's proxy_addr field.
+        assert_eq!(
+            proxy_addr_from_url("http://user:secret@proxy.corp.com:8080"),
+            Some("proxy.corp.com:8080".to_string())
+        );
+    }
+
+    #[test]
+    fn ipv6_gets_brackets() {
+        assert_eq!(
+            proxy_addr_from_url("http://[::1]:3128"),
+            Some("[::1]:3128".to_string())
+        );
+    }
+
+    #[test]
+    fn default_port_for_https() {
+        assert_eq!(
+            proxy_addr_from_url("https://proxy.corp.com"),
+            Some("proxy.corp.com:443".to_string())
+        );
+    }
+
+    #[test]
+    fn default_port_for_http() {
+        assert_eq!(
+            proxy_addr_from_url("http://proxy.corp.com"),
+            Some("proxy.corp.com:80".to_string())
+        );
+    }
+
+    #[test]
+    fn invalid_url_returns_none() {
+        assert_eq!(proxy_addr_from_url("not a url"), None);
+        assert_eq!(proxy_addr_from_url(""), None);
+    }
+}
 
 #[cfg(test)]
 mod yaml_escape_tests {
