@@ -9,6 +9,7 @@ use crate::pac::PacEngine;
 
 pub mod auth_tunnel;
 pub mod http_utils;
+pub mod ssrf;
 
 pub const MAGIC_SHOW_REQUEST: &str =
     "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
@@ -305,6 +306,24 @@ async fn handle_connection(
     if let Some(auth) = authenticator {
         auth_tunnel::handle_authenticated_tunnel(client, internal_port, auth, config, pac).await;
         return;
+    }
+
+    // SSRF guard for the g3proxy direct path.
+    //
+    // When g3proxy is configured with a DirectFixed escaper it will connect
+    // directly to whatever target the client requests.  Block CONNECT requests
+    // to private/loopback addresses before the bytes reach g3proxy.
+    // Peek bytes are still in the socket buffer — no bytes are consumed here.
+    if !config.proxy.allow_private_ips {
+        if let Some(target) = ssrf::connect_target_from_peek(&peek_buf[..n]) {
+            if ssrf::is_private_target(&target) {
+                warn!("SSRF blocked: CONNECT to private address {}", target);
+                let _ = client
+                    .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                    .await;
+                return;
+            }
+        }
     }
 
     // Default: forward raw bytes to g3proxy.
