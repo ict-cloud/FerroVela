@@ -1482,6 +1482,7 @@ dependencies = [
  "g3proxy",
  "glob",
  "keyring",
+ "libc",
  "libgssapi",
  "log",
  "memchr",

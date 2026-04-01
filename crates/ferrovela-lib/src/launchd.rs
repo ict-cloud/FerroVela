@@ -52,14 +52,9 @@ fn proxy_exe() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn uid() -> String {
-    Command::new("id")
-        .arg("-u")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "501".to_string())
+fn uid() -> u32 {
+    // SAFETY: getuid(2) is always safe to call.
+    unsafe { libc::getuid() }
 }
 
 fn xml_escape(s: &str) -> String {
