@@ -220,6 +220,51 @@ async fn fetch_pac_script(url: &str) -> Result<String> {
     String::from_utf8(bytes.to_vec()).context("PAC file is not valid UTF-8")
 }
 
+/// Resolve and validate a local PAC file path before any content is read.
+///
+/// Two-step defence against path traversal:
+///
+/// 1. **Pre-canonicalization check** — reject any path that contains a `..`
+///    component outright, without touching the filesystem.  This catches the
+///    obvious `../../etc/passwd` pattern immediately.
+///
+/// 2. **Canonicalization** — resolve the path to its absolute, symlink-free
+///    form with [`std::fs::canonicalize`].  This eliminates `.` and any
+///    encoded or chained traversal that slipped past step 1, and also
+///    confirms that the path exists.
+///
+/// The canonicalized path is then verified to be a regular file (not a
+/// directory, device node, or named pipe).
+///
+/// Returns the canonical [`PathBuf`] on success so that the subsequent
+/// `fs::read` operates on the fully resolved path.
+fn resolve_pac_path(path: &str) -> Result<std::path::PathBuf> {
+    use std::path::{Component, Path};
+
+    let p = Path::new(path);
+
+    // Step 1: reject traversal components before any filesystem access.
+    if p.components().any(|c| c == Component::ParentDir) {
+        anyhow::bail!("PAC file path must not contain '..' components");
+    }
+
+    // Step 2: canonicalize — fails if the path does not exist.
+    let canonical =
+        std::fs::canonicalize(p).context("PAC file path could not be resolved")?;
+
+    // Verify the resolved path is a regular file, not a directory or device.
+    let meta = canonical
+        .metadata()
+        .context("Failed to read PAC file metadata")?;
+    if !meta.is_file() {
+        anyhow::bail!(
+            "PAC file path must point to a regular file, not a directory or device"
+        );
+    }
+
+    Ok(canonical)
+}
+
 /// Validate `script` by evaluating it in a throw-away QuickJS context and
 /// confirming that `FindProxyForURL` is defined.
 ///
@@ -245,8 +290,8 @@ impl PacEngine {
         let script = if pac_url_or_path.starts_with("http") {
             fetch_pac_script(pac_url_or_path).await?
         } else {
-            let bytes =
-                fs::read(pac_url_or_path).context("Failed to read PAC file")?;
+            let canonical = resolve_pac_path(pac_url_or_path)?;
+            let bytes = fs::read(&canonical).context("Failed to read PAC file")?;
             if bytes.len() > PAC_MAX_BYTES {
                 anyhow::bail!(
                     "PAC file too large: {} bytes (limit {} bytes)",
