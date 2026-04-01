@@ -97,8 +97,13 @@ impl ExceptionsConfig {
         if pattern == host {
             return true;
         }
-        if pattern.starts_with("*.") && host.ends_with(&pattern[1..]) {
-            return true;
+        if pattern.starts_with("*.") {
+            let suffix = &pattern[1..]; // e.g. ".example.com"
+            // The host must end with the suffix AND have at least one character
+            // before it (so ".example.com" does not match "*.example.com").
+            if host.len() > suffix.len() && host.ends_with(suffix) {
+                return true;
+            }
         }
         false
     }
@@ -383,6 +388,8 @@ mod tests {
         assert!(!exceptions.matches("example.com"));
         assert!(!exceptions.matches("myexample.com"));
         assert!(!exceptions.matches("other.com"));
+        // Edge case: a bare dot-prefixed string must not match.
+        assert!(!exceptions.matches(".example.com"));
     }
 
     #[test]
