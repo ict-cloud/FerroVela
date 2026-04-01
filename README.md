@@ -10,7 +10,7 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 - **Corporate Authentication**: Supports Basic, NTLM, and Kerberos authentication for upstream proxies.
 - **MDM Ready**: Configuration stored via macOS CFPreferences — deploy settings across a fleet with `.mobileconfig` profiles.
 - **Developer Friendly**:
-    - Easy debugging with detailed logging.
+    - Detailed logging with automatic rotation: the log file (`~/Library/Logs/ferrovela.log`) rotates at 10 MiB, keeping three compressed backups (`.1`–`.3`).
     - Simple configuration via the GUI or `defaults` command.
 
 ## Configuration
