@@ -802,6 +802,48 @@ mod tests {
         assert!(result.is_err(), "expected rejection for oversized PAC file");
     }
 
+    // ── resolve_pac_path (path traversal) ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_pac_path_traversal_dot_dot_rejected() {
+        let result = PacEngine::new("../../etc/passwd").await;
+        assert!(
+            result.is_err(),
+            "path with '..' components must be rejected"
+        );
+        let msg = result.err().unwrap().to_string();
+        assert!(
+            msg.contains(".."),
+            "error should mention the traversal: {}",
+            msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pac_path_nonexistent_rejected() {
+        let result = PacEngine::new("/nonexistent/path/to/file.pac").await;
+        assert!(result.is_err(), "nonexistent path must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_pac_path_directory_rejected() {
+        // Passing a directory path must be rejected even if it exists.
+        let dir = tempfile::TempDir::new().unwrap();
+        let result = PacEngine::new(dir.path().to_str().unwrap()).await;
+        assert!(result.is_err(), "directory path must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_pac_path_valid_file_accepted() {
+        let pac_script = r#"function FindProxyForURL(url, host) { return "DIRECT"; }"#;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), pac_script).unwrap();
+
+        // A valid, existing regular file must succeed.
+        let result = PacEngine::new(tmp.path().to_str().unwrap()).await;
+        assert!(result.is_ok(), "valid PAC file path must be accepted");
+    }
+
     #[tokio::test]
     async fn test_pac_eval_timeout_kills_infinite_loop() {
         // A PAC script that loops forever must be interrupted by the eval timeout
