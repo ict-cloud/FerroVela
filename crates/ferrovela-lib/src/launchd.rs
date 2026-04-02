@@ -3,7 +3,27 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub const SERVICE_LABEL: &str = "com.ictcloud.ferrovela";
-pub const UI_SOCKET_PATH: &str = "/tmp/ferrovela-ui.sock";
+
+/// Returns the path to the UI IPC socket.
+///
+/// On macOS, `$TMPDIR` is a per-user, per-session directory managed by launchd
+/// (e.g. `/var/folders/…/T/`).  It is not world-writable, so other users cannot
+/// even reach the socket.  The socket file itself is additionally created with
+/// mode `0600` by the UI process.
+pub fn ui_socket_path() -> std::path::PathBuf {
+    let dir = std::env::var_os("TMPDIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            // Fallback for environments where TMPDIR is unset.
+            let p = home()
+                .join("Library")
+                .join("Application Support")
+                .join(SERVICE_LABEL);
+            let _ = std::fs::create_dir_all(&p);
+            p
+        });
+    dir.join(format!("{SERVICE_LABEL}.sock"))
+}
 
 fn home() -> PathBuf {
     std::env::var("HOME")
@@ -32,14 +52,9 @@ fn proxy_exe() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn uid() -> String {
-    Command::new("id")
-        .arg("-u")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "501".to_string())
+fn uid() -> u32 {
+    // SAFETY: getuid(2) is always safe to call.
+    unsafe { libc::getuid() }
 }
 
 fn xml_escape(s: &str) -> String {
@@ -92,20 +107,37 @@ pub fn start() -> Result<()> {
     install()?;
     let uid = uid();
     let plist = plist_path();
+    let target = format!("gui/{uid}");
+    let service = format!("gui/{uid}/{SERVICE_LABEL}");
+
+    // Load the service definition into the launchd domain.
     let out = Command::new("launchctl")
-        .args([
-            "bootstrap",
-            &format!("gui/{uid}"),
-            plist.to_str().unwrap_or(""),
-        ])
+        .args(["bootstrap", &target, plist.to_str().unwrap_or("")])
         .output()
         .context("running launchctl bootstrap")?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // Error 37 = "already loaded" – harmless when re-starting after a crash.
+        if !stderr.contains("37:") {
+            return Err(anyhow::anyhow!(
+                "launchctl bootstrap failed: {}",
+                stderr.trim()
+            ));
+        }
+    }
+
+    // The plist uses RunAtLoad=false so bootstrap alone does not spawn the
+    // process.  Kick-start it explicitly.
+    let out = Command::new("launchctl")
+        .args(["kickstart", &service])
+        .output()
+        .context("running launchctl kickstart")?;
     if out.status.success() {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr);
         Err(anyhow::anyhow!(
-            "launchctl bootstrap failed: {}",
+            "launchctl kickstart failed: {}",
             stderr.trim()
         ))
     }
@@ -128,7 +160,12 @@ pub fn stop() -> Result<()> {
     }
 }
 
-/// Returns `true` when the launchd service is loaded and has a running PID.
+/// Returns `true` when the launchd service is loaded (i.e. bootstrapped).
+///
+/// A loaded service is either running or in the process of starting.
+/// We intentionally do **not** require `pid > 0` because launchd may take a
+/// moment to fork the process after bootstrap, and checking only for a live
+/// PID would race with the UI poll and flip the toggle back to "Stopped".
 pub fn is_running() -> bool {
     let uid = uid();
     Command::new("launchctl")
@@ -136,4 +173,25 @@ pub fn is_running() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Returns the PID of the proxy process, or `None` when the service is not
+/// loaded or has not yet been assigned a process.
+pub fn pid() -> Option<u32> {
+    let uid = uid();
+    let output = Command::new("launchctl")
+        .args(["print", &format!("gui/{uid}/{SERVICE_LABEL}")])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.lines().find_map(|line| {
+        let trimmed = line.trim();
+        trimmed
+            .strip_prefix("pid = ")
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|&pid| pid > 0)
+    })
 }

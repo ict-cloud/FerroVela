@@ -10,7 +10,7 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 - **Corporate Authentication**: Supports Basic, NTLM, and Kerberos authentication for upstream proxies.
 - **MDM Ready**: Configuration stored via macOS CFPreferences — deploy settings across a fleet with `.mobileconfig` profiles.
 - **Developer Friendly**:
-    - Easy debugging with detailed logging.
+    - Detailed logging with automatic rotation: the log file (`~/Library/Logs/ferrovela.log`) rotates at 10 MiB, keeping three compressed backups (`.1`–`.3`).
     - Simple configuration via the GUI or `defaults` command.
 
 ## Configuration
@@ -95,12 +95,14 @@ Available preference keys:
 | `proxy_allow_private_ips` | Boolean | Allow proxying to private IPs |
 | `upstream_auth_type` | String | `none`, `basic`, `ntlm`, or `kerberos` |
 | `upstream_username` | String | Upstream proxy username |
-| `upstream_password` | String | Upstream proxy password |
-| `upstream_use_keyring` | Boolean | Store password in system keychain |
+| `upstream_password` | String | Upstream proxy password (see credential security note below) |
+| `upstream_use_keyring` | Boolean | Store password in system keychain (recommended) |
 | `upstream_domain` | String | NTLM domain |
 | `upstream_workstation` | String | NTLM workstation |
 | `upstream_proxy_url` | String | Upstream proxy URL |
 | `exceptions_hosts` | Array of String | Hosts to bypass proxy |
+
+> **Credential security**: When `upstream_use_keyring` is `false`, the password is stored as plaintext in the macOS preferences database. Enable `upstream_use_keyring` to store credentials in the system keychain instead. Credentials are escaped before being written to the internal proxy configuration, so special characters (quotes, backslashes, newlines) in passwords are handled safely.
 
 ## Building and Running
 
