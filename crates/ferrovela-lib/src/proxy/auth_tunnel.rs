@@ -190,9 +190,9 @@ pub async fn perform_authenticated_connect(
         };
 
         debug!(
-            "round {}: sending Proxy-Authorization: {}",
+            "round {}: sending Proxy-Authorization scheme: {}",
             round,
-            &auth_header[..auth_header.find(' ').unwrap_or(auth_header.len()).min(20)]
+            auth_header.split_whitespace().next().unwrap_or("(unknown)")
         );
 
         send_connect(&mut upstream, target, Some(&auth_header)).await?;
@@ -269,6 +269,16 @@ pub async fn handle_authenticated_tunnel(
             }
             None => {
                 // ── direct CONNECT (exception or no upstream) ────────────
+                // SSRF guard: reject connections to private/loopback addresses
+                // unless the operator has explicitly allowed them.
+                if !config.proxy.allow_private_ips && crate::proxy::ssrf::is_private_target(&target)
+                {
+                    log::warn!("SSRF blocked: direct CONNECT to private address {}", target);
+                    let _ = client
+                        .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                        .await;
+                    return;
+                }
                 match TcpStream::connect(&target).await {
                     Ok(mut upstream) => {
                         let _ = upstream.set_nodelay(true);

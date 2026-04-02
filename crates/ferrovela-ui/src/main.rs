@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Single-instance check via Unix socket.
     // If another UI instance is already running, connecting to its socket signals it
     // to bring itself to the front, then we exit.
-    if std::os::unix::net::UnixStream::connect(launchd::UI_SOCKET_PATH).is_ok() {
+    if std::os::unix::net::UnixStream::connect(launchd::ui_socket_path()).is_ok() {
         log::info!("Existing UI instance found. Signaling and exiting.");
         return Ok(());
     }

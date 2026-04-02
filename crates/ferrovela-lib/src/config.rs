@@ -42,7 +42,7 @@ pub fn default_port() -> u16 {
     3128
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UpstreamConfig {
     pub auth_type: String,
     pub username: Option<String>,
@@ -53,13 +53,27 @@ pub struct UpstreamConfig {
     pub proxy_url: Option<String>,
 }
 
+impl std::fmt::Debug for UpstreamConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UpstreamConfig")
+            .field("auth_type", &self.auth_type)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field("use_keyring", &self.use_keyring)
+            .field("domain", &self.domain)
+            .field("workstation", &self.workstation)
+            .field("proxy_url", &self.proxy_url.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
+}
+
 impl Default for UpstreamConfig {
     fn default() -> Self {
         Self {
             auth_type: "none".to_string(),
             username: None,
             password: None,
-            use_keyring: false,
+            use_keyring: true,
             domain: None,
             workstation: None,
             proxy_url: None,
@@ -83,8 +97,13 @@ impl ExceptionsConfig {
         if pattern == host {
             return true;
         }
-        if pattern.starts_with("*.") && host.ends_with(&pattern[1..]) {
-            return true;
+        if pattern.starts_with("*.") {
+            let suffix = &pattern[1..]; // e.g. ".example.com"
+                                        // The host must end with the suffix AND have at least one character
+                                        // before it (so ".example.com" does not match "*.example.com").
+            if host.len() > suffix.len() && host.ends_with(suffix) {
+                return true;
+            }
         }
         false
     }
@@ -293,7 +312,7 @@ fn load_upstream_config() -> Option<UpstreamConfig> {
         auth_type: auth_type.unwrap_or_else(|| "none".to_string()),
         username,
         password: read_cf_string("upstream_password"),
-        use_keyring: read_cf_bool("upstream_use_keyring").unwrap_or(false),
+        use_keyring: read_cf_bool("upstream_use_keyring").unwrap_or(true),
         domain: read_cf_string("upstream_domain"),
         workstation: read_cf_string("upstream_workstation"),
         proxy_url,
@@ -369,6 +388,8 @@ mod tests {
         assert!(!exceptions.matches("example.com"));
         assert!(!exceptions.matches("myexample.com"));
         assert!(!exceptions.matches("other.com"));
+        // Edge case: a bare dot-prefixed string must not match.
+        assert!(!exceptions.matches(".example.com"));
     }
 
     #[test]
