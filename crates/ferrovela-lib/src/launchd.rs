@@ -143,25 +143,38 @@ pub fn stop() -> Result<()> {
     }
 }
 
-/// Returns `true` when the launchd service is loaded **and** has a running PID.
+/// Returns `true` when the launchd service is loaded (i.e. bootstrapped).
+///
+/// A loaded service is either running or in the process of starting.
+/// We intentionally do **not** require `pid > 0` because launchd may take a
+/// moment to fork the process after bootstrap, and checking only for a live
+/// PID would race with the UI poll and flip the toggle back to "Stopped".
 pub fn is_running() -> bool {
+    let uid = uid();
+    Command::new("launchctl")
+        .args(["print", &format!("gui/{uid}/{SERVICE_LABEL}")])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Returns the PID of the proxy process, or `None` when the service is not
+/// loaded or has not yet been assigned a process.
+pub fn pid() -> Option<u32> {
     let uid = uid();
     let output = Command::new("launchctl")
         .args(["print", &format!("gui/{uid}/{SERVICE_LABEL}")])
-        .output();
-    match output {
-        Ok(o) if o.status.success() => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            // A loaded service without a live process shows "pid = 0" or no pid line.
-            stdout.lines().any(|line| {
-                let trimmed = line.trim();
-                trimmed.starts_with("pid = ")
-                    && trimmed
-                        .strip_prefix("pid = ")
-                        .and_then(|v| v.parse::<u32>().ok())
-                        .is_some_and(|pid| pid > 0)
-            })
-        }
-        _ => false,
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.lines().find_map(|line| {
+        let trimmed = line.trim();
+        trimmed
+            .strip_prefix("pid = ")
+            .and_then(|v| v.parse::<u32>().ok())
+            .filter(|&pid| pid > 0)
+    })
 }
