@@ -29,7 +29,10 @@ impl RotatingLogger {
         let bytes_written = file.metadata().map(|m| m.len()).unwrap_or(0);
         Ok(Self {
             path: path.to_owned(),
-            inner: Mutex::new(RotatingFile { file, bytes_written }),
+            inner: Mutex::new(RotatingFile {
+                file,
+                bytes_written,
+            }),
         })
     }
 

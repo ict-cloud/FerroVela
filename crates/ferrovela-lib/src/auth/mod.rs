@@ -112,7 +112,10 @@ mod tests {
         // GSS-API SPN must be "HTTP@::1", not "HTTP@[::1]".
         // Constructing with brackets would produce an invalid service name.
         let auth = create_authenticator(&kerberos_config("http://[::1]:8080"));
-        assert!(auth.is_some(), "should construct authenticator for IPv6 proxy");
+        assert!(
+            auth.is_some(),
+            "should construct authenticator for IPv6 proxy"
+        );
     }
 
     #[test]

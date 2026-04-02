@@ -99,8 +99,8 @@ impl ExceptionsConfig {
         }
         if pattern.starts_with("*.") {
             let suffix = &pattern[1..]; // e.g. ".example.com"
-            // The host must end with the suffix AND have at least one character
-            // before it (so ".example.com" does not match "*.example.com").
+                                        // The host must end with the suffix AND have at least one character
+                                        // before it (so ".example.com" does not match "*.example.com").
             if host.len() > suffix.len() && host.ends_with(suffix) {
                 return true;
             }

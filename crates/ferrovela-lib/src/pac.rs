@@ -249,17 +249,14 @@ fn resolve_pac_path(path: &str) -> Result<std::path::PathBuf> {
     }
 
     // Step 2: canonicalize — fails if the path does not exist.
-    let canonical =
-        std::fs::canonicalize(p).context("PAC file path could not be resolved")?;
+    let canonical = std::fs::canonicalize(p).context("PAC file path could not be resolved")?;
 
     // Verify the resolved path is a regular file, not a directory or device.
     let meta = canonical
         .metadata()
         .context("Failed to read PAC file metadata")?;
     if !meta.is_file() {
-        anyhow::bail!(
-            "PAC file path must point to a regular file, not a directory or device"
-        );
+        anyhow::bail!("PAC file path must point to a regular file, not a directory or device");
     }
 
     Ok(canonical)
@@ -773,7 +770,10 @@ mod tests {
         // Invalid scripts are now rejected at load time, not deferred to the
         // first find_proxy call.
         let result = PacEngine::new(tmp.path().to_str().unwrap()).await;
-        assert!(result.is_err(), "expected PacEngine::new to fail for invalid script");
+        assert!(
+            result.is_err(),
+            "expected PacEngine::new to fail for invalid script"
+        );
     }
 
     #[tokio::test]
@@ -784,9 +784,16 @@ mod tests {
         std::fs::write(tmp.path(), pac_script).unwrap();
 
         let result = PacEngine::new(tmp.path().to_str().unwrap()).await;
-        assert!(result.is_err(), "expected rejection when FindProxyForURL is absent");
         assert!(
-            result.err().unwrap().to_string().contains("FindProxyForURL"),
+            result.is_err(),
+            "expected rejection when FindProxyForURL is absent"
+        );
+        assert!(
+            result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("FindProxyForURL"),
             "error message should name the missing function"
         );
     }

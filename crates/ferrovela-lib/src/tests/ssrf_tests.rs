@@ -46,13 +46,20 @@ async fn tunnel_response(request: &[u8], allow_private_ips: bool) -> Vec<u8> {
     tokio::spawn(async move {
         let (conn, _) = outer.accept().await.unwrap();
         // No authenticator → direct-connect path, which is where the SSRF guard lives.
-        handle_authenticated_tunnel(conn, internal_port, {
-            // We need *something* for the authenticator parameter but the direct
-            // CONNECT path doesn't use it; use a mock.
-            use crate::auth::mock_kerberos::MockKerberosAuthenticator;
-            use crate::auth::UpstreamAuthenticator;
-            Arc::from(Box::new(MockKerberosAuthenticator) as Box<dyn UpstreamAuthenticator>)
-        }, config_c, pac_c).await;
+        handle_authenticated_tunnel(
+            conn,
+            internal_port,
+            {
+                // We need *something* for the authenticator parameter but the direct
+                // CONNECT path doesn't use it; use a mock.
+                use crate::auth::mock_kerberos::MockKerberosAuthenticator;
+                use crate::auth::UpstreamAuthenticator;
+                Arc::from(Box::new(MockKerberosAuthenticator) as Box<dyn UpstreamAuthenticator>)
+            },
+            config_c,
+            pac_c,
+        )
+        .await;
     });
 
     let mut client = TcpStream::connect(outer_addr).await.unwrap();

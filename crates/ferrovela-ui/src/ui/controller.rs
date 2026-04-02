@@ -382,10 +382,9 @@ fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
                         // Restrict the socket to owner read/write only.
                         // On macOS, AF_UNIX socket permissions ARE enforced by the
                         // kernel — 0600 prevents other users from connecting at all.
-                        if let Err(e) = std::fs::set_permissions(
-                            &path,
-                            std::fs::Permissions::from_mode(0o600),
-                        ) {
+                        if let Err(e) =
+                            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+                        {
                             log::warn!("could not set socket permissions: {e}");
                         }
                         l
@@ -428,10 +427,7 @@ fn peer_is_owner(stream: &tokio::net::UnixStream) -> bool {
     let mut peer_gid: libc::gid_t = libc::gid_t::MAX;
     // SAFETY: fd is valid for the lifetime of this call; pointers are stack-allocated.
     if unsafe { libc::getpeereid(fd, &mut peer_uid, &mut peer_gid) } != 0 {
-        log::debug!(
-            "getpeereid failed: {}",
-            std::io::Error::last_os_error()
-        );
+        log::debug!("getpeereid failed: {}", std::io::Error::last_os_error());
         return false;
     }
     // SAFETY: geteuid() is always safe to call.

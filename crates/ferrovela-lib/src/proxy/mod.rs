@@ -436,7 +436,10 @@ mod yaml_escape_tests {
 
     #[test]
     fn passthrough_normal_strings() {
-        assert_eq!(yaml_escape("proxy.example.com:8080"), "proxy.example.com:8080");
+        assert_eq!(
+            yaml_escape("proxy.example.com:8080"),
+            "proxy.example.com:8080"
+        );
         assert_eq!(yaml_escape("user@domain.com"), "user@domain.com");
         assert_eq!(yaml_escape(""), "");
     }

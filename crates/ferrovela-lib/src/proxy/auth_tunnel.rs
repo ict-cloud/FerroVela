@@ -271,8 +271,7 @@ pub async fn handle_authenticated_tunnel(
                 // ── direct CONNECT (exception or no upstream) ────────────
                 // SSRF guard: reject connections to private/loopback addresses
                 // unless the operator has explicitly allowed them.
-                if !config.proxy.allow_private_ips
-                    && crate::proxy::ssrf::is_private_target(&target)
+                if !config.proxy.allow_private_ips && crate::proxy::ssrf::is_private_target(&target)
                 {
                     log::warn!("SSRF blocked: direct CONNECT to private address {}", target);
                     let _ = client
