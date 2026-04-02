@@ -352,7 +352,7 @@ impl PacEngine {
                             .lock()
                             .ok()
                             .and_then(|guard| *guard)
-                            .map_or(false, |deadline| std::time::Instant::now() >= deadline)
+                            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
                     })));
 
                     ctx.with(|ctx| {
