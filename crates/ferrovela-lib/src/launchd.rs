@@ -107,20 +107,37 @@ pub fn start() -> Result<()> {
     install()?;
     let uid = uid();
     let plist = plist_path();
+    let target = format!("gui/{uid}");
+    let service = format!("gui/{uid}/{SERVICE_LABEL}");
+
+    // Load the service definition into the launchd domain.
     let out = Command::new("launchctl")
-        .args([
-            "bootstrap",
-            &format!("gui/{uid}"),
-            plist.to_str().unwrap_or(""),
-        ])
+        .args(["bootstrap", &target, plist.to_str().unwrap_or("")])
         .output()
         .context("running launchctl bootstrap")?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // Error 37 = "already loaded" – harmless when re-starting after a crash.
+        if !stderr.contains("37:") {
+            return Err(anyhow::anyhow!(
+                "launchctl bootstrap failed: {}",
+                stderr.trim()
+            ));
+        }
+    }
+
+    // The plist uses RunAtLoad=false so bootstrap alone does not spawn the
+    // process.  Kick-start it explicitly.
+    let out = Command::new("launchctl")
+        .args(["kickstart", &service])
+        .output()
+        .context("running launchctl kickstart")?;
     if out.status.success() {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&out.stderr);
         Err(anyhow::anyhow!(
-            "launchctl bootstrap failed: {}",
+            "launchctl kickstart failed: {}",
             stderr.trim()
         ))
     }
