@@ -143,12 +143,25 @@ pub fn stop() -> Result<()> {
     }
 }
 
-/// Returns `true` when the launchd service is loaded and has a running PID.
+/// Returns `true` when the launchd service is loaded **and** has a running PID.
 pub fn is_running() -> bool {
     let uid = uid();
-    Command::new("launchctl")
+    let output = Command::new("launchctl")
         .args(["print", &format!("gui/{uid}/{SERVICE_LABEL}")])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            // A loaded service without a live process shows "pid = 0" or no pid line.
+            stdout.lines().any(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("pid = ")
+                    && trimmed
+                        .strip_prefix("pid = ")
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .is_some_and(|pid| pid > 0)
+            })
+        }
+        _ => false,
+    }
 }
