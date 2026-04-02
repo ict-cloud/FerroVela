@@ -7,13 +7,14 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.4"
+version = "0.4.1"
 edition = "2021"
 
 [workspace.dependencies]
 anyhow = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 keyring = "3.6.*"
+log = "0.4"
 
 [profile.release]
 opt-level = "s"
