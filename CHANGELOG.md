@@ -1,6 +1,9 @@
 # Changelog
 
-## [0.4.2] - Unreleased
+## [0.4.3] - Unreleased
+
+
+## [0.4.2] - 2. Apr 2026
 
 ### Security
 - Fixed YAML injection vulnerability in g3proxy config generation: upstream credentials (`username`, `password`) and the proxy address were embedded into a YAML string via `format!()` without escaping, allowing a specially crafted password to break out of the YAML scalar and inject arbitrary configuration keys. All three values are now passed through a `yaml_escape()` function that escapes `"`, `\`, `\n`, `\r`, `\t`, and null before interpolation.
