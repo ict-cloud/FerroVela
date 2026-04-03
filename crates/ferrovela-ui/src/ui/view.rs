@@ -1,7 +1,8 @@
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, text, text_input, toggler, Space,
+    button, column, container, pick_list, row, scrollable, text, text_input, toggler, Column,
+    Space,
 };
-use iced::{window, Alignment, Element, Length, Theme};
+use iced::{window, Alignment, Color, Element, Length, Theme};
 
 use super::model::{AuthType, ConfigEditor, Message, ServiceStatus, Tab};
 
@@ -26,13 +27,14 @@ impl ConfigEditor {
             Tab::Exceptions => self.view_exceptions_config(),
         };
 
-        let status_text = match self.service_status {
-            ServiceStatus::Running => "Running",
-            ServiceStatus::Stopped => "Stopped",
+        let (dot_color, status_label) = match self.service_status {
+            ServiceStatus::Running => (Color::from_rgb(0.13, 0.62, 0.13), "Running"),
+            ServiceStatus::Stopped => (Color::from_rgb(0.55, 0.55, 0.55), "Stopped"),
         };
 
         let service_control = row![
-            text(status_text),
+            text("●").color(dot_color),
+            text(status_label),
             Space::new().width(10),
             toggler(self.service_status == ServiceStatus::Running)
                 .on_toggle(Message::ToggleService)
@@ -40,11 +42,45 @@ impl ConfigEditor {
             Space::new().width(20),
             button("Show Logs").on_press(Message::OpenLogs),
         ]
+        .spacing(5)
         .align_y(Alignment::Center);
+
+        let mut main_col = Column::new().spacing(10);
+        main_col = main_col.push(service_control);
+
+        if !self.status.is_empty() {
+            let color = if self.status_is_error {
+                Color::from_rgb(0.75, 0.1, 0.1)
+            } else {
+                Color::from_rgb(0.1, 0.55, 0.1)
+            };
+            main_col = main_col.push(text(&self.status).color(color).size(13));
+        }
+
+        if self.restart_needed && self.service_status == ServiceStatus::Running {
+            let banner = container(
+                row![
+                    text("Settings changed — restart required to apply.").size(13),
+                    Space::new().width(Length::Fill),
+                    button("Restart Now")
+                        .on_press(Message::RestartService)
+                        .style(iced::widget::button::danger),
+                ]
+                .align_y(Alignment::Center)
+                .spacing(10),
+            )
+            .padding(10)
+            .style(warning_box)
+            .width(Length::Fill);
+            main_col = main_col.push(banner);
+        }
+
+        main_col = main_col.push(Space::new().height(10));
+        main_col = main_col.push(content);
 
         row![
             sidebar,
-            container(column![service_control, Space::new().height(20), content].spacing(10))
+            container(main_col)
                 .width(Length::Fill)
                 .padding(20)
                 .style(rounded_box)
@@ -66,14 +102,16 @@ impl ConfigEditor {
             Space::new().height(10),
             group_box(
                 column![
-                    field_row(
+                    validated_field_row(
                         "Port:",
-                        text_input("3128", &self.proxy_port).on_input(Message::ProxyPortChanged)
+                        text_input("3128", &self.proxy_port).on_input(Message::ProxyPortChanged),
+                        self.proxy_port_error.as_deref()
                     ),
-                    field_row(
+                    validated_field_row(
                         "PAC File:",
-                        text_input("Path to PAC file", &self.pac_file)
-                            .on_input(Message::PacFileChanged)
+                        text_input("Path or URL to PAC file", &self.pac_file)
+                            .on_input(Message::PacFileChanged),
+                        self.pac_file_error.as_deref()
                     )
                 ]
                 .spacing(10)
@@ -84,53 +122,74 @@ impl ConfigEditor {
     }
 
     fn view_upstream_config(&self) -> Element<'_, Message> {
+        let mut fields = Column::new().spacing(10);
+
+        fields = fields.push(field_row(
+            "Auth Type:",
+            pick_list(
+                &AuthType::ALL[..],
+                Some(self.upstream_auth_type),
+                Message::UpstreamAuthTypeChanged,
+            ),
+        ));
+
+        match self.upstream_auth_type {
+            AuthType::None => {}
+            AuthType::Kerberos => {
+                fields = fields.push(field_row(
+                    "Username (Kerberos principal):",
+                    text_input("username@REALM", &self.upstream_username)
+                        .on_input(Message::UpstreamUsernameChanged),
+                ));
+                fields = fields.push(validated_field_row(
+                    "Proxy URL:",
+                    text_input("http://upstream:port", &self.upstream_proxy_url)
+                        .on_input(Message::UpstreamProxyUrlChanged),
+                    self.upstream_proxy_url_error.as_deref(),
+                ));
+            }
+            AuthType::Basic | AuthType::Ntlm => {
+                fields = fields.push(field_row(
+                    "Username:",
+                    text_input("Username", &self.upstream_username)
+                        .on_input(Message::UpstreamUsernameChanged),
+                ));
+                fields = fields.push(field_row(
+                    "Password:",
+                    text_input("Password", &self.upstream_password)
+                        .on_input(Message::UpstreamPasswordChanged)
+                        .secure(true),
+                ));
+                fields = fields.push(field_row(
+                    "Store password in system keyring:",
+                    iced::widget::Checkbox::new(self.upstream_use_keyring)
+                        .on_toggle(Message::UpstreamUseKeyringToggled),
+                ));
+                if self.upstream_auth_type == AuthType::Ntlm {
+                    fields = fields.push(field_row(
+                        "Domain:",
+                        text_input("Domain", &self.upstream_domain)
+                            .on_input(Message::UpstreamDomainChanged),
+                    ));
+                    fields = fields.push(field_row(
+                        "Workstation:",
+                        text_input("Workstation", &self.upstream_workstation)
+                            .on_input(Message::UpstreamWorkstationChanged),
+                    ));
+                }
+                fields = fields.push(validated_field_row(
+                    "Proxy URL:",
+                    text_input("http://upstream:port", &self.upstream_proxy_url)
+                        .on_input(Message::UpstreamProxyUrlChanged),
+                    self.upstream_proxy_url_error.as_deref(),
+                ));
+            }
+        }
+
         column![
             text("Upstream Settings").size(24),
             Space::new().height(10),
-            group_box(
-                column![
-                    field_row(
-                        "Auth Type:",
-                        pick_list(
-                            &AuthType::ALL[..],
-                            Some(self.upstream_auth_type),
-                            Message::UpstreamAuthTypeChanged
-                        )
-                    ),
-                    field_row(
-                        "Username:",
-                        text_input("Username", &self.upstream_username)
-                            .on_input(Message::UpstreamUsernameChanged)
-                    ),
-                    field_row(
-                        "Password:",
-                        text_input("Password", &self.upstream_password)
-                            .on_input(Message::UpstreamPasswordChanged)
-                            .secure(true)
-                    ),
-                    field_row(
-                        "Store password in system keyring:",
-                        iced::widget::Checkbox::new(self.upstream_use_keyring)
-                            .on_toggle(Message::UpstreamUseKeyringToggled)
-                    ),
-                    field_row(
-                        "Domain:",
-                        text_input("Domain (NTLM)", &self.upstream_domain)
-                            .on_input(Message::UpstreamDomainChanged)
-                    ),
-                    field_row(
-                        "Workstation:",
-                        text_input("Workstation (NTLM)", &self.upstream_workstation)
-                            .on_input(Message::UpstreamWorkstationChanged)
-                    ),
-                    field_row(
-                        "Proxy URL:",
-                        text_input("http://upstream:port", &self.upstream_proxy_url)
-                            .on_input(Message::UpstreamProxyUrlChanged)
-                    ),
-                ]
-                .spacing(10)
-            )
+            group_box(fields)
         ]
         .into()
     }
@@ -180,6 +239,18 @@ fn field_row<'a>(label: &'a str, input: impl Into<Element<'a, Message>>) -> Elem
         .into()
 }
 
+fn validated_field_row<'a>(
+    label: &'a str,
+    input: impl Into<Element<'a, Message>>,
+    error: Option<&'a str>,
+) -> Element<'a, Message> {
+    let mut col = column![text(label).size(14), input.into()].spacing(5);
+    if let Some(err) = error {
+        col = col.push(text(err).color(Color::from_rgb(0.75, 0.1, 0.1)).size(12));
+    }
+    col.into()
+}
+
 fn rounded_box(theme: &Theme) -> container::Style {
     let palette = theme.extended_palette();
     container::Style {
@@ -188,6 +259,29 @@ fn rounded_box(theme: &Theme) -> container::Style {
             radius: 10.0.into(),
             width: 1.0,
             color: palette.background.strong.color,
+        },
+        ..Default::default()
+    }
+}
+
+fn warning_box(theme: &Theme) -> container::Style {
+    let (bg, border) = if matches!(theme, Theme::Dark) {
+        (
+            Color::from_rgb(0.30, 0.22, 0.02),
+            Color::from_rgb(0.55, 0.40, 0.05),
+        )
+    } else {
+        (
+            Color::from_rgb(1.0, 0.95, 0.7),
+            Color::from_rgb(0.85, 0.65, 0.1),
+        )
+    };
+    container::Style {
+        background: Some(bg.into()),
+        border: iced::Border {
+            radius: 6.0.into(),
+            width: 1.0,
+            color: border,
         },
         ..Default::default()
     }

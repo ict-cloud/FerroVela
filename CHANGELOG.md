@@ -2,6 +2,16 @@
 
 ## [0.4.3] - Unreleased
 
+### Added
+- **Dark mode support.** The UI now follows the macOS system appearance. The theme switches between Light and Dark automatically when the system preference changes (polled every three seconds).
+- **Inline input validation.** The Port, PAC File, and Proxy URL fields are now validated as the user types. Invalid values show a red error message directly below the field and block saving until corrected. Port must be a number between 1 and 65535; PAC File must be an `http(s)://` URL or an existing file path; Proxy URL must start with `http://` or `https://` and include a host.
+- **Service status indicator.** The service toggle row now shows a coloured dot — green when the proxy is running, grey when stopped — making the current state immediately scannable.
+
+### Changed
+- **Upstream tab: progressive disclosure.** The Upstream settings panel now shows only the fields relevant to the selected authentication type. Selecting *None* hides all credential fields; *Basic* shows username, password, keyring toggle, and proxy URL; *NTLM* additionally reveals domain and workstation; *Kerberos* shows only a principal field and proxy URL (no password — the system Kerberos ticket cache is used).
+- **Status feedback.** Save confirmations ("Saved successfully!") and service-toggle outcomes are now displayed below the service control bar in green (success) or red (error). Messages auto-clear after approximately three seconds.
+- **Restart-required banner.** When a configuration change is saved while the proxy service is running, a yellow warning banner appears with a *Restart Now* button. The banner dismisses automatically when the service is restarted or stopped.
+
 
 ## [0.4.2] - 2. Apr 2026
 

@@ -17,12 +17,18 @@ A Rust-based local proxy designed for developers, offering robust configuration 
 
 ### Graphical Interface
 
-FerroVela includes a simple graphical interface for managing the configuration.
+FerroVela includes a graphical interface for managing the configuration.
 
 To launch the configuration editor:
 ```bash
 ./target/release/ferrovela
 ```
+
+The UI provides three configuration tabs — **Proxy**, **Upstream**, and **Exceptions** — with the following behaviours:
+
+- **Save feedback**: every change is persisted immediately; a green confirmation or red error message appears below the service toggle and auto-dismisses after a few seconds.
+- **Progressive disclosure**: the Upstream tab shows only the fields relevant to the chosen authentication type (e.g. Domain and Workstation are hidden unless NTLM is selected).
+- **Restart banner**: if the proxy service is running when settings are changed, a warning banner appears with a *Restart Now* button to apply the new configuration without manually toggling the service off and on.
 
 ### Authentication Types
 
@@ -49,6 +55,8 @@ To use Kerberos authentication:
 1. Ensure your machine is joined to the domain or you have a valid Kerberos ticket (obtainable via `kinit`).
 2. Set `upstream_auth_type` to `kerberos`.
 3. FerroVela will automatically use the cached credentials (TGT) to authenticate with the upstream proxy using SPNEGO.
+
+> In the GUI, selecting *Kerberos* hides the password field — no password is required or stored.
 
 ```bash
 defaults write com.ictcloud.ferrovela upstream_auth_type -string "kerberos"
