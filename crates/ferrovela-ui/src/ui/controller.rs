@@ -56,10 +56,10 @@ impl ConfigEditor {
                 .proxy
                 .pac_file
                 .as_deref()
-                .and_then(|s| validate_pac_file(s)),
+                .and_then(validate_pac_file),
             upstream_proxy_url_error: upstream
                 .and_then(|u| u.proxy_url.as_deref())
-                .and_then(|s| validate_proxy_url(s)),
+                .and_then(validate_proxy_url),
             service_status: if launchd::is_running() {
                 ServiceStatus::Running
             } else {
