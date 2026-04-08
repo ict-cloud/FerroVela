@@ -258,9 +258,9 @@ impl ConfigEditor {
             Message::Tick => {
                 if self.show_logs || self.log_window_id.is_some() {
                     self.load_logs();
-                    return iced::widget::operation::snap_to_end(
-                        iced::widget::Id::new("ferrovela_log_scroll"),
-                    );
+                    return iced::widget::operation::snap_to_end(iced::widget::Id::new(
+                        "ferrovela_log_scroll",
+                    ));
                 }
             }
             Message::External => {
