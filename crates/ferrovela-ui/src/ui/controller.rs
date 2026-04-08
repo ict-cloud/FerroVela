@@ -1,4 +1,4 @@
-use iced::{window, Subscription, Task};
+use iced::{window, Subscription, Task, Theme};
 use log::error;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
@@ -16,6 +16,7 @@ impl ConfigEditor {
 
         let (main_window_id, open_task) = window::open(window::Settings {
             size: (800.0, 600.0).into(),
+            min_size: Some((600.0, 450.0).into()),
             ..Default::default()
         });
 
@@ -23,7 +24,7 @@ impl ConfigEditor {
         let editor = Self {
             active_tab: Tab::Proxy,
             proxy_port: config.proxy.port.to_string(),
-            pac_file: config.proxy.pac_file.unwrap_or_default(),
+            pac_file: config.proxy.pac_file.clone().unwrap_or_default(),
             allow_private_ips: config.proxy.allow_private_ips,
             upstream_auth_type: upstream
                 .map(|u| AuthType::from(u.auth_type.as_str()))
@@ -48,13 +49,27 @@ impl ConfigEditor {
                 .map(|e| e.hosts.join(", "))
                 .unwrap_or_default(),
             status: String::new(),
+            status_is_error: false,
+            status_timestamp: None,
+            proxy_port_error: validate_port(&config.proxy.port.to_string()),
+            pac_file_error: config.proxy.pac_file.as_deref().and_then(validate_pac_file),
+            upstream_proxy_url_error: upstream
+                .and_then(|u| u.proxy_url.as_deref())
+                .and_then(validate_proxy_url),
             service_status: if launchd::is_running() {
                 ServiceStatus::Running
             } else {
                 ServiceStatus::Stopped
             },
+            restart_needed: false,
+            appearance: if system_prefers_dark() {
+                Theme::Dark
+            } else {
+                Theme::Light
+            },
             show_logs: false,
             log_content: String::new(),
+            log_search: String::new(),
             main_window_id: Some(main_window_id),
             log_window_id: None,
         };
@@ -85,12 +100,31 @@ impl ConfigEditor {
                 self.handle_toggle_service(start);
                 Task::none()
             }
+            Message::RestartService => {
+                self.handle_restart_service();
+                Task::none()
+            }
             Message::PollStatus => {
                 self.service_status = if launchd::is_running() {
                     ServiceStatus::Running
                 } else {
                     ServiceStatus::Stopped
                 };
+                self.appearance = if system_prefers_dark() {
+                    Theme::Dark
+                } else {
+                    Theme::Light
+                };
+                if let Some(ts) = self.status_timestamp {
+                    if ts.elapsed() >= Duration::from_secs(3) {
+                        self.status.clear();
+                        self.status_timestamp = None;
+                    }
+                }
+                Task::none()
+            }
+            Message::LogSearchChanged(v) => {
+                self.log_search = v;
                 Task::none()
             }
             Message::OpenLogs
@@ -105,19 +139,47 @@ impl ConfigEditor {
 
     fn handle_config_message(&mut self, message: Message) {
         match message {
-            Message::ProxyPortChanged(v) => self.proxy_port = v,
-            Message::PacFileChanged(v) => self.pac_file = v,
-            Message::UpstreamAuthTypeChanged(v) => self.upstream_auth_type = v,
+            Message::ProxyPortChanged(v) => {
+                self.proxy_port_error = validate_port(&v);
+                self.proxy_port = v;
+            }
+            Message::PacFileChanged(v) => {
+                self.pac_file_error = validate_pac_file(&v);
+                self.pac_file = v;
+            }
+            Message::UpstreamAuthTypeChanged(v) => {
+                self.upstream_auth_type = v;
+                // Clear proxy URL error when upstream is disabled
+                if v == AuthType::None {
+                    self.upstream_proxy_url_error = None;
+                }
+            }
+            Message::UpstreamProxyUrlChanged(v) => {
+                self.upstream_proxy_url_error = validate_proxy_url(&v);
+                self.upstream_proxy_url = v;
+            }
             Message::UpstreamUsernameChanged(v) => self.upstream_username = v,
             Message::UpstreamPasswordChanged(v) => self.upstream_password = v,
             Message::UpstreamUseKeyringToggled(v) => self.upstream_use_keyring = v,
             Message::UpstreamDomainChanged(v) => self.upstream_domain = v,
             Message::UpstreamWorkstationChanged(v) => self.upstream_workstation = v,
-            Message::UpstreamProxyUrlChanged(v) => self.upstream_proxy_url = v,
             Message::ExceptionsHostsChanged(v) => self.exceptions_hosts = v,
             _ => return,
         }
-        self.save_current_config();
+
+        if self.has_validation_errors() {
+            self.status = "Invalid input — settings not saved.".to_string();
+            self.status_is_error = true;
+            self.status_timestamp = Some(std::time::Instant::now());
+        } else {
+            self.save_current_config();
+        }
+    }
+
+    fn has_validation_errors(&self) -> bool {
+        self.proxy_port_error.is_some()
+            || self.pac_file_error.is_some()
+            || self.upstream_proxy_url_error.is_some()
     }
 
     fn handle_toggle_service(&mut self, start: bool) {
@@ -125,25 +187,51 @@ impl ConfigEditor {
             match launchd::start() {
                 Ok(()) => {
                     self.service_status = ServiceStatus::Running;
+                    self.restart_needed = false;
                     self.status = "Service started.".to_string();
+                    self.status_is_error = false;
                 }
                 Err(e) => {
                     error!("Failed to start service: {}", e);
                     self.status = format!("Failed to start: {e}");
+                    self.status_is_error = true;
                 }
             }
         } else {
             match launchd::stop() {
                 Ok(()) => {
                     self.service_status = ServiceStatus::Stopped;
+                    self.restart_needed = false;
                     self.status = "Service stopped.".to_string();
+                    self.status_is_error = false;
                 }
                 Err(e) => {
                     error!("Failed to stop service: {}", e);
                     self.status = format!("Failed to stop: {e}");
+                    self.status_is_error = true;
                 }
             }
         }
+        self.status_timestamp = Some(std::time::Instant::now());
+    }
+
+    fn handle_restart_service(&mut self) {
+        let _ = launchd::stop();
+        match launchd::start() {
+            Ok(()) => {
+                self.service_status = ServiceStatus::Running;
+                self.restart_needed = false;
+                self.status = "Service restarted.".to_string();
+                self.status_is_error = false;
+            }
+            Err(e) => {
+                error!("Failed to restart service: {}", e);
+                self.status = format!("Failed to restart: {e}");
+                self.status_is_error = true;
+                self.service_status = ServiceStatus::Stopped;
+            }
+        }
+        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     fn handle_window_message(&mut self, message: Message) -> Task<Message> {
@@ -166,6 +254,9 @@ impl ConfigEditor {
             Message::Tick => {
                 if self.show_logs || self.log_window_id.is_some() {
                     self.load_logs();
+                    return iced::widget::operation::snap_to_end(iced::widget::Id::new(
+                        "ferrovela_log_scroll",
+                    ));
                 }
             }
             Message::External => {
@@ -174,6 +265,7 @@ impl ConfigEditor {
                 } else {
                     let (new_id, open_task) = window::open(window::Settings {
                         size: (800.0, 600.0).into(),
+                        min_size: Some((600.0, 450.0).into()),
                         ..Default::default()
                     });
                     self.main_window_id = Some(new_id);
@@ -269,10 +361,18 @@ impl ConfigEditor {
         match save_config(&config) {
             Ok(_) => {
                 self.status = "Saved successfully!".to_string();
+                self.status_is_error = false;
+                if self.service_status == ServiceStatus::Running {
+                    self.restart_needed = true;
+                }
                 self.sync_keyring();
             }
-            Err(e) => self.status = format!("Error saving: {}", e),
+            Err(e) => {
+                self.status = format!("Error saving: {}", e);
+                self.status_is_error = true;
+            }
         }
+        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     /// Writes or removes the password from the system keyring depending on
@@ -310,6 +410,7 @@ impl ConfigEditor {
 
         let (id, open_task) = window::open(window::Settings {
             size: (800.0, 600.0).into(),
+            min_size: Some((500.0, 350.0).into()),
             position,
             ..Default::default()
         });
@@ -438,6 +539,59 @@ fn peer_is_owner(stream: &tokio::net::UnixStream) -> bool {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Returns `true` when macOS is currently in Dark appearance.
+fn system_prefers_dark() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "Dark")
+        .unwrap_or(false)
+}
+
+fn validate_port(s: &str) -> Option<String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Some("Required".to_string());
+    }
+    match s.parse::<u32>() {
+        Ok(n) if (1..=65535).contains(&n) => None,
+        Ok(_) => Some("Must be between 1 and 65535".to_string()),
+        Err(_) => Some("Must be a number".to_string()),
+    }
+}
+
+fn validate_pac_file(s: &str) -> Option<String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if s.starts_with("http://") || s.starts_with("https://") {
+        return None;
+    }
+    if !std::path::Path::new(s).exists() {
+        return Some("File not found".to_string());
+    }
+    None
+}
+
+fn validate_proxy_url(s: &str) -> Option<String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let host_part = if let Some(rest) = s.strip_prefix("http://") {
+        rest
+    } else if let Some(rest) = s.strip_prefix("https://") {
+        rest
+    } else {
+        return Some("Must start with http:// or https://".to_string());
+    };
+    if host_part.is_empty() || host_part.starts_with('/') {
+        return Some("Enter a valid URL, e.g. http://proxy.corp.com:8080".to_string());
+    }
+    None
+}
 
 fn non_empty_trimmed(s: &str) -> Option<String> {
     let trimmed = s.trim();
