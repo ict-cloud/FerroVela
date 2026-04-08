@@ -52,11 +52,7 @@ impl ConfigEditor {
             status_is_error: false,
             status_timestamp: None,
             proxy_port_error: validate_port(&config.proxy.port.to_string()),
-            pac_file_error: config
-                .proxy
-                .pac_file
-                .as_deref()
-                .and_then(validate_pac_file),
+            pac_file_error: config.proxy.pac_file.as_deref().and_then(validate_pac_file),
             upstream_proxy_url_error: upstream
                 .and_then(|u| u.proxy_url.as_deref())
                 .and_then(validate_proxy_url),
