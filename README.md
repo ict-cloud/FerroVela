@@ -112,6 +112,10 @@ Available preference keys:
 
 > **Credential security**: When `upstream_use_keyring` is `false`, the password is stored as plaintext in the macOS preferences database. Enable `upstream_use_keyring` to store credentials in the system keychain instead. Credentials are escaped before being written to the internal proxy configuration, so special characters (quotes, backslashes, newlines) in passwords are handled safely.
 
+## Development Container
+
+A `.devcontainer` configuration is included for use with VS Code Dev Containers or GitHub Codespaces. It provides Rust, rust-analyzer, and all required native build dependencies (clang, Kerberos headers, X11/Wayland/GL libs). Note that because FerroVela is macOS-only, the container is useful for editing, code navigation, and running unit tests — a full binary build requires macOS.
+
 ## Requirements
 
 - **macOS** — FerroVela is a macOS-only application. It relies on launchd, CFPreferences, and the macOS Kerberos framework.
