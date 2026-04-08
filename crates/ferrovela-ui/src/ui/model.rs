@@ -1,4 +1,4 @@
-use iced::window;
+use iced::{window, Theme};
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -81,11 +81,13 @@ pub enum Message {
     ExceptionsHostsChanged(String),
     // Service
     ToggleService(bool),
+    RestartService,
     PollStatus,
     // Log window
     OpenLogs,
     OpenLogsAt(Option<iced::Point>),
     Tick,
+    LogSearchChanged(String),
     // IPC / window management
     External,
     WindowCloseRequested(window::Id),
@@ -116,11 +118,21 @@ pub struct ConfigEditor {
     pub exceptions_hosts: String,
     // Status bar
     pub status: String,
+    pub status_is_error: bool,
+    pub status_timestamp: Option<std::time::Instant>,
+    // Validation errors
+    pub proxy_port_error: Option<String>,
+    pub pac_file_error: Option<String>,
+    pub upstream_proxy_url_error: Option<String>,
     // Service control
     pub service_status: ServiceStatus,
+    pub restart_needed: bool,
+    // Appearance
+    pub appearance: Theme,
     // Log window
     pub show_logs: bool,
     pub log_content: String,
+    pub log_search: String,
     // Window management
     pub main_window_id: Option<window::Id>,
     pub log_window_id: Option<window::Id>,

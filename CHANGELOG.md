@@ -1,6 +1,25 @@
 # Changelog
 
-## [0.4.2] - Unreleased
+## [0.4.3] - Unreleased
+
+### Added
+- **Dark mode support.** The UI now follows the macOS system appearance. The theme switches between Light and Dark automatically when the system preference changes (polled every three seconds).
+- **Inline input validation.** The Port, PAC File, and Proxy URL fields are now validated as the user types. Invalid values show a red error message directly below the field and block saving until corrected. Port must be a number between 1 and 65535; PAC File must be an `http(s)://` URL or an existing file path; Proxy URL must start with `http://` or `https://` and include a host.
+- **Service status indicator.** The service toggle row now shows a coloured dot — green when the proxy is running, grey when stopped — making the current state immediately scannable.
+
+- **Resizable main and log windows.** Both windows now enforce a minimum size (600×450 for the main window, 500×350 for the log window) and grow freely beyond the default 800×600.
+- **Log viewer search.** A search bar at the top of the log window filters lines in real time (case-insensitive). Empty the field to show all entries.
+- **Log level coloring.** Log lines are coloured by severity — ERROR in red, WARN in amber (adjusted for dark mode), DEBUG/TRACE in grey, INFO in the default theme text colour.
+- **Log viewer auto-scroll.** The log window automatically scrolls to the latest entry on each refresh tick (every 500 ms while the window is open).
+- **Logs button moved to sidebar.** The "Show Logs" button has been removed from the service control bar and added to the bottom of the sidebar. The button highlights when the log window is open.
+
+### Changed
+- **Upstream tab: progressive disclosure.** The Upstream settings panel now shows only the fields relevant to the selected authentication type. Selecting *None* hides all credential fields; *Basic* shows username, password, keyring toggle, and proxy URL; *NTLM* additionally reveals domain and workstation; *Kerberos* shows only a principal field and proxy URL (no password — the system Kerberos ticket cache is used).
+- **Status feedback.** Save confirmations ("Saved successfully!") and service-toggle outcomes are now displayed below the service control bar in green (success) or red (error). Messages auto-clear after approximately three seconds.
+- **Restart-required banner.** When a configuration change is saved while the proxy service is running, a yellow warning banner appears with a *Restart Now* button. The banner dismisses automatically when the service is restarted or stopped.
+
+
+## [0.4.2] - 2. Apr 2026
 
 ### Security
 - Fixed YAML injection vulnerability in g3proxy config generation: upstream credentials (`username`, `password`) and the proxy address were embedded into a YAML string via `format!()` without escaping, allowing a specially crafted password to break out of the YAML scalar and inject arbitrary configuration keys. All three values are now passed through a `yaml_escape()` function that escapes `"`, `\`, `\n`, `\r`, `\t`, and null before interpolation.

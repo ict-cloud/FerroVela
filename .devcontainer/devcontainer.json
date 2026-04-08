@@ -1,0 +1,24 @@
+{
+  "name": "FerroVela",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "onCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev llvm pkg-config libkrb5-dev libx11-dev libxext-dev libxft-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libgles2-mesa-dev cmake",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.buildScripts.enable": true,
+        "rust-analyzer.checkOnSave.command": "clippy"
+      }
+    }
+  },
+  "remoteEnv": {
+    "LIBCLANG_PATH": "/usr/lib/llvm-14/lib"
+  }
+}

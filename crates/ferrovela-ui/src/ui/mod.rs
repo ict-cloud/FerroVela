@@ -13,7 +13,14 @@ pub fn run_ui() -> iced::Result {
         ConfigEditor::update,
         ConfigEditor::view,
     )
-    .theme(|_: &ConfigEditor, _: window::Id| iced::Theme::Light)
+    .title(|app: &ConfigEditor, id: window::Id| {
+        if Some(id) == app.log_window_id {
+            "FerroVela – Logs".to_string()
+        } else {
+            "FerroVela".to_string()
+        }
+    })
+    .theme(|app: &ConfigEditor, _: window::Id| app.appearance.clone())
     .subscription(ConfigEditor::subscription)
     .run()
 }
