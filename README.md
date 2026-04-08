@@ -112,19 +112,45 @@ Available preference keys:
 
 > **Credential security**: When `upstream_use_keyring` is `false`, the password is stored as plaintext in the macOS preferences database. Enable `upstream_use_keyring` to store credentials in the system keychain instead. Credentials are escaped before being written to the internal proxy configuration, so special characters (quotes, backslashes, newlines) in passwords are handled safely.
 
+## Requirements
+
+- **macOS** — FerroVela is a macOS-only application. It relies on launchd, CFPreferences, and the macOS Kerberos framework.
+- **Rust (latest stable)** — install via [rustup](https://rustup.rs).
+- **Xcode Command Line Tools** — provides the Kerberos headers and `codesign` used during the build:
+  ```bash
+  xcode-select --install
+  ```
+- **cargo-bundle** — packages the app as a `.app` bundle:
+  ```bash
+  cargo install cargo-bundle
+  ```
+
 ## Building and Running
 
-1.  **Install Rust**: Ensure you have Rust and Cargo installed.
-2.  **Install Dependencies**:
-    -   On Ubuntu/Debian: `sudo apt-get install libkrb5-dev libgssapi-krb5-2`
-    -   On MacOS: usually installed by default (via Xcode Command Line Tools).
-3.  **Install cargo-bundle**: `cargo install cargo-bundle`
-4.  **Build the app bundle**:
-    ```bash
-    ./bundle.sh
-    ```
-    This builds both binaries, creates the macOS app bundle, and copies the proxy service into it. The resulting bundle is at `target/release/bundle/osx/FerroVela.app`.
-5.  **Run**: Open `FerroVela.app` or run `./target/release/ferrovela-ui` directly.
+1. **Build the app bundle**:
+   ```bash
+   ./bundle.sh
+   ```
+   This compiles both binaries in release mode, assembles the macOS `.app` bundle, copies the proxy service binary into it, and ad-hoc codesigns all three artifacts with the required network entitlements. The resulting bundle is at:
+   ```
+   target/release/bundle/osx/FerroVela.app
+   ```
+
+2. **Run**: Open `FerroVela.app` from Finder or from the terminal:
+   ```bash
+   open target/release/bundle/osx/FerroVela.app
+   ```
+
+   > **First launch — Gatekeeper**: Because the bundle uses ad-hoc signing (not a Developer ID), macOS will block it on the first open. Right-click the app in Finder and choose **Open**, then confirm the prompt. You only need to do this once.
+
+### Development builds
+
+To run the UI directly without assembling a full bundle (useful during development):
+```bash
+cargo build --release -p ferrovela -p ferrovela-ui
+./target/release/ferrovela-ui
+```
+The UI will look for the `ferrovela` proxy binary alongside itself, so both must be built before launching.
 
 ## Performance Testing
 
@@ -158,9 +184,10 @@ Requests Per Second (RPS): 6248.71
 - `core-foundation`: macOS CFPreferences integration for configuration storage.
 - `rquickjs`: JavaScript engine for PAC file evaluation.
 - `reqwest`: HTTP client for remote PAC file fetching (DIRECT, no-proxy).
-- `iced`: For the graphical user interface.
-- `libgssapi`: For Kerberos/GSSAPI integration.
-- `ntlmclient`: For NTLMv2 authentication.
+- `iced`: Graphical user interface framework.
+- `keyring`: Stores credentials in the macOS system keychain.
+- `libgssapi`: Kerberos/GSSAPI integration (uses the macOS Kerberos framework; requires Xcode Command Line Tools).
+- `ntlmclient`: NTLMv2 authentication.
 
 ## Changelog
 
