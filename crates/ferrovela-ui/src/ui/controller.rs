@@ -16,6 +16,7 @@ impl ConfigEditor {
 
         let (main_window_id, open_task) = window::open(window::Settings {
             size: (800.0, 600.0).into(),
+            min_size: Some((600.0, 450.0).into()),
             ..Default::default()
         });
 
@@ -72,6 +73,7 @@ impl ConfigEditor {
             },
             show_logs: false,
             log_content: String::new(),
+            log_search: String::new(),
             main_window_id: Some(main_window_id),
             log_window_id: None,
         };
@@ -123,6 +125,10 @@ impl ConfigEditor {
                         self.status_timestamp = None;
                     }
                 }
+                Task::none()
+            }
+            Message::LogSearchChanged(v) => {
+                self.log_search = v;
                 Task::none()
             }
             Message::OpenLogs
@@ -252,6 +258,9 @@ impl ConfigEditor {
             Message::Tick => {
                 if self.show_logs || self.log_window_id.is_some() {
                     self.load_logs();
+                    return iced::widget::operation::snap_to_end(
+                        iced::widget::Id::new("ferrovela_log_scroll"),
+                    );
                 }
             }
             Message::External => {
@@ -260,6 +269,7 @@ impl ConfigEditor {
                 } else {
                     let (new_id, open_task) = window::open(window::Settings {
                         size: (800.0, 600.0).into(),
+                        min_size: Some((600.0, 450.0).into()),
                         ..Default::default()
                     });
                     self.main_window_id = Some(new_id);
@@ -404,6 +414,7 @@ impl ConfigEditor {
 
         let (id, open_task) = window::open(window::Settings {
             size: (800.0, 600.0).into(),
+            min_size: Some((500.0, 350.0).into()),
             position,
             ..Default::default()
         });

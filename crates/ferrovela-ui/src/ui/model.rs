@@ -87,6 +87,7 @@ pub enum Message {
     OpenLogs,
     OpenLogsAt(Option<iced::Point>),
     Tick,
+    LogSearchChanged(String),
     // IPC / window management
     External,
     WindowCloseRequested(window::Id),
@@ -131,6 +132,7 @@ pub struct ConfigEditor {
     // Log window
     pub show_logs: bool,
     pub log_content: String,
+    pub log_search: String,
     // Window management
     pub main_window_id: Option<window::Id>,
     pub log_window_id: Option<window::Id>,

@@ -1,5 +1,6 @@
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, text, text_input, toggler, Column, Space,
+    button, column, container, pick_list, row, rule, scrollable, text, text_input, toggler, Column,
+    Space,
 };
 use iced::{window, Alignment, Color, Element, Length, Theme};
 
@@ -11,14 +12,29 @@ impl ConfigEditor {
             return self.view_logs();
         }
 
+        let logs_button = button(text("Logs").width(Length::Fill).align_x(Alignment::Center))
+            .width(Length::Fill)
+            .padding(10)
+            .on_press(Message::OpenLogs)
+            .style(if self.log_window_id.is_some() {
+                iced::widget::button::primary
+            } else {
+                iced::widget::button::secondary
+            });
+
         let sidebar = column![
             sidebar_button("Proxy", Tab::Proxy, self.active_tab),
             sidebar_button("Upstream", Tab::Upstream, self.active_tab),
             sidebar_button("Exceptions", Tab::Exceptions, self.active_tab),
+            Space::new().height(Length::Fill),
+            rule::horizontal(1),
+            Space::new().height(5),
+            logs_button,
         ]
         .spacing(5)
         .padding(10)
-        .width(Length::Fixed(150.0));
+        .width(Length::Fixed(150.0))
+        .height(Length::Fill);
 
         let content = match self.active_tab {
             Tab::Proxy => self.view_proxy_config(),
@@ -38,8 +54,6 @@ impl ConfigEditor {
             toggler(self.service_status == ServiceStatus::Running)
                 .on_toggle(Message::ToggleService)
                 .width(Length::Shrink),
-            Space::new().width(20),
-            button("Show Logs").on_press(Message::OpenLogs),
         ]
         .spacing(5)
         .align_y(Alignment::Center);
@@ -88,11 +102,42 @@ impl ConfigEditor {
     }
 
     fn view_logs(&self) -> Element<'_, Message> {
-        column![scrollable(
-            text(&self.log_content).font(iced::font::Font::MONOSPACE)
-        )]
-        .padding(10)
-        .into()
+        let search_bar = row![
+            text("Search:").size(13),
+            text_input("Filter log output…", &self.log_search)
+                .on_input(Message::LogSearchChanged)
+                .size(13),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        let is_dark = matches!(self.appearance, Theme::Dark);
+        let query = self.log_search.to_lowercase();
+
+        let mut lines_col = Column::new().spacing(1).padding([0, 4]);
+        for line in self.log_content.lines() {
+            if !query.is_empty() && !line.to_lowercase().contains(&query) {
+                continue;
+            }
+            let color = log_line_color(line, is_dark);
+            let mut t = text(line)
+                .font(iced::font::Font::MONOSPACE)
+                .size(12)
+                .width(Length::Fill);
+            if let Some(c) = color {
+                t = t.color(c);
+            }
+            lines_col = lines_col.push(t);
+        }
+
+        let log_scroll = scrollable(lines_col)
+            .id(iced::widget::Id::new("ferrovela_log_scroll"))
+            .height(Length::Fill);
+
+        column![search_bar, rule::horizontal(1), log_scroll]
+            .spacing(8)
+            .padding(10)
+            .into()
     }
 
     fn view_proxy_config(&self) -> Element<'_, Message> {
@@ -248,6 +293,24 @@ fn validated_field_row<'a>(
         col = col.push(text(err).color(Color::from_rgb(0.75, 0.1, 0.1)).size(12));
     }
     col.into()
+}
+
+/// Returns a coloured foreground for a log line based on its level keyword,
+/// or `None` to let the line inherit the default theme text colour.
+fn log_line_color(line: &str, is_dark: bool) -> Option<Color> {
+    if line.contains("ERROR") {
+        Some(Color::from_rgb(0.85, 0.2, 0.2))
+    } else if line.contains("WARN") {
+        Some(if is_dark {
+            Color::from_rgb(0.95, 0.75, 0.25)
+        } else {
+            Color::from_rgb(0.70, 0.45, 0.0)
+        })
+    } else if line.contains("DEBUG") || line.contains("TRACE") {
+        Some(Color::from_rgb(0.55, 0.55, 0.55))
+    } else {
+        None
+    }
 }
 
 fn rounded_box(theme: &Theme) -> container::Style {
