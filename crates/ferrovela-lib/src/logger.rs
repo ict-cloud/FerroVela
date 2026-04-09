@@ -3,6 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Maximum size of a single log file before rotation is triggered (10 MiB).
 const MAX_LOG_BYTES: u64 = 10 * 1024 * 1024;
@@ -67,6 +68,52 @@ impl RotatingLogger {
     }
 }
 
+fn format_timestamp() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let (year, month, day, hour, min, sec) = epoch_to_datetime(secs);
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{min:02}:{sec:02}Z")
+}
+
+/// Converts Unix epoch seconds to (year, month, day, hour, min, sec) UTC.
+fn epoch_to_datetime(secs: u64) -> (u64, u8, u8, u8, u8, u8) {
+    let sec = (secs % 60) as u8;
+    let mins = secs / 60;
+    let min = (mins % 60) as u8;
+    let hours = mins / 60;
+    let hour = (hours % 24) as u8;
+    let days = hours / 24;
+
+    // Compute year/month/day from days since epoch (1970-01-01).
+    let mut year = 1970u64;
+    let mut remaining = days;
+    loop {
+        let days_in_year = if is_leap(year) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        year += 1;
+    }
+    let months = [31u64, if is_leap(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut month = 1u8;
+    for &m in &months {
+        if remaining < m {
+            break;
+        }
+        remaining -= m;
+        month += 1;
+    }
+    let day = (remaining + 1) as u8;
+    (year, month, day, hour, min, sec)
+}
+
+fn is_leap(year: u64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
 fn backup_path(path: &Path, n: u32) -> PathBuf {
     let mut s = path.as_os_str().to_owned();
     s.push(format!(".{n}"));
@@ -97,7 +144,8 @@ impl log::Log for RotatingLogger {
                     }
                 }
             }
-            let msg = format!("{} - {}\n", record.level(), record.args());
+            let timestamp = format_timestamp();
+            let msg = format!("{} {} - {}\n", timestamp, record.level(), record.args());
             if inner.file.write_all(msg.as_bytes()).is_ok() {
                 inner.bytes_written += msg.len() as u64;
             }

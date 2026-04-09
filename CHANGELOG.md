@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.4.3] - Unreleased
+## [0.4.4] - unreleased
+
+### Changed
+- **Log timestamps.** Each log line now includes an ISO 8601 UTC timestamp (e.g. `2026-04-09T10:23:45Z`) prepended before the log level, making it straightforward to correlate log entries with events.
+
+
+## [0.4.3] - 9. Apr 2026
 
 ### Added
 - **Dark mode support.** The UI now follows the macOS system appearance. The theme switches between Light and Dark automatically when the system preference changes (polled every three seconds).
