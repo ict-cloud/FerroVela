@@ -205,8 +205,33 @@ impl Proxy {
     #[cfg(test)]
     pub async fn run_with_listener(
         &self,
-        _listener: tokio::net::TcpListener,
+        listener: tokio::net::TcpListener,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let upstream_addr = self
+            .config
+            .upstream
+            .as_ref()
+            .and_then(|u| u.proxy_url.clone());
+
+        loop {
+            match listener.accept().await {
+                Ok((mut client, _)) => {
+                    let addr = upstream_addr.clone();
+                    tokio::spawn(async move {
+                        if let Some(addr) = addr {
+                            if let Ok(mut upstream) =
+                                tokio::net::TcpStream::connect(&addr).await
+                            {
+                                let _ =
+                                    tokio::io::copy_bidirectional(&mut client, &mut upstream)
+                                        .await;
+                            }
+                        }
+                    });
+                }
+                Err(_) => break,
+            }
+        }
         Ok(())
     }
 
