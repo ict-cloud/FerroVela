@@ -97,7 +97,20 @@ fn epoch_to_datetime(secs: u64) -> (u64, u8, u8, u8, u8, u8) {
         remaining -= days_in_year;
         year += 1;
     }
-    let months = [31u64, if is_leap(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let months = [
+        31u64,
+        if is_leap(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut month = 1u8;
     for &m in &months {
         if remaining < m {
@@ -111,7 +124,7 @@ fn epoch_to_datetime(secs: u64) -> (u64, u8, u8, u8, u8, u8) {
 }
 
 fn is_leap(year: u64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
 fn backup_path(path: &Path, n: u32) -> PathBuf {

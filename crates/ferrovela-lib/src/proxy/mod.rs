@@ -219,12 +219,9 @@ impl Proxy {
                     let addr = upstream_addr.clone();
                     tokio::spawn(async move {
                         if let Some(addr) = addr {
-                            if let Ok(mut upstream) =
-                                tokio::net::TcpStream::connect(&addr).await
-                            {
+                            if let Ok(mut upstream) = tokio::net::TcpStream::connect(&addr).await {
                                 let _ =
-                                    tokio::io::copy_bidirectional(&mut client, &mut upstream)
-                                        .await;
+                                    tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
                             }
                         }
                     });
