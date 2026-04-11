@@ -207,8 +207,7 @@ async fn test_ntlm_uses_same_tcp_connection() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
-    let type2_bytes =
-        build_ntlm_type2_challenge([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
+    let type2_bytes = build_ntlm_type2_challenge([0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
     let type2_b64 = base64::prelude::BASE64_STANDARD.encode(&type2_bytes);
     let type2_header = format!("NTLM {type2_b64}");
 

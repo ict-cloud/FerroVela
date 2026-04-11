@@ -263,9 +263,7 @@ pub async fn handle_authenticated_tunnel(
                         Err(e) => {
                             error!("auth tunnel to {} via {}: {}", target, proxy_addr, e);
                             let _ = client
-                                .write_all(
-                                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
-                                )
+                                .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
                                 .await;
                         }
                     }
@@ -281,12 +279,11 @@ pub async fn handle_authenticated_tunnel(
                             match read_proxy_response(&mut upstream).await {
                                 Ok((200, _)) => {
                                     let _ = client
-                                        .write_all(
-                                            b"HTTP/1.1 200 Connection established\r\n\r\n",
-                                        )
+                                        .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
                                         .await;
-                                    let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream)
-                                        .await;
+                                    let _ =
+                                        tokio::io::copy_bidirectional(&mut client, &mut upstream)
+                                            .await;
                                 }
                                 Ok((status, _)) => {
                                     error!(
@@ -312,9 +309,7 @@ pub async fn handle_authenticated_tunnel(
                         Err(e) => {
                             error!("connect to upstream {}: {}", addr, e);
                             let _ = client
-                                .write_all(
-                                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
-                                )
+                                .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
                                 .await;
                         }
                     }
@@ -322,8 +317,7 @@ pub async fn handle_authenticated_tunnel(
             }
             None => {
                 // ── direct CONNECT (exception or no upstream) ────────────
-                if !config.proxy.allow_private_ips
-                    && crate::proxy::ssrf::is_private_target(&target)
+                if !config.proxy.allow_private_ips && crate::proxy::ssrf::is_private_target(&target)
                 {
                     log::warn!("SSRF blocked: direct CONNECT to private address {}", target);
                     let _ = client
@@ -507,7 +501,11 @@ fn rewrite_request_for_direct(headers: &str, url: &str) -> String {
                 p.push('?');
                 p.push_str(q);
             }
-            if p.is_empty() { "/".to_string() } else { p }
+            if p.is_empty() {
+                "/".to_string()
+            } else {
+                p
+            }
         })
         .unwrap_or_else(|| "/".to_string());
 
