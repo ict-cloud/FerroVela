@@ -1,4 +1,4 @@
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::Sender;
@@ -22,7 +22,7 @@ pub enum ProxySignal {
     Show,
 }
 
-/// Extracts `host:port` from a proxy URL for use in g3proxy configuration.
+/// Extracts `host:port` from a proxy URL.
 ///
 /// Handles all URL forms correctly:
 /// - Strips scheme and userinfo (`http://user:pass@host:port` → `host:port`)
@@ -30,36 +30,13 @@ pub enum ProxySignal {
 /// - Falls back to the scheme's default port when no port is explicit
 ///
 /// Returns `None` if the URL cannot be parsed or has no host.
-fn proxy_addr_from_url(proxy_url: &str) -> Option<String> {
+pub(crate) fn proxy_addr_from_url(proxy_url: &str) -> Option<String> {
     let u = url::Url::parse(proxy_url).ok()?;
     let port = u.port_or_known_default()?;
-    // `host()` returns a typed enum; using it avoids double-bracketing IPv6
-    // addresses since `host_str()` already includes brackets in its output.
     match u.host()? {
         url::Host::Ipv6(addr) => Some(format!("[{}]:{}", addr, port)),
         host => Some(format!("{}:{}", host, port)),
     }
-}
-
-/// Escapes a string for safe embedding inside a YAML double-quoted scalar.
-///
-/// YAML double-quoted scalars use backslash escape sequences (YAML 1.2 §7.3.1).
-/// Without escaping, a value containing `"` or `\n` can break out of the scalar
-/// and inject arbitrary YAML keys — a config-injection vulnerability.
-fn yaml_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\0' => out.push_str("\\0"),
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 pub struct Proxy {
@@ -92,70 +69,6 @@ impl Proxy {
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listen_addr = format!("127.0.0.1:{}", self.config.proxy.port);
-
-        // Reserve an available port for g3proxy's internal listener.
-        // Brief race window between drop and g3proxy bind; negligible on loopback.
-        let internal_port = {
-            let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-            let port = probe.local_addr()?.port();
-            drop(probe);
-            port
-        };
-
-        // Build and write g3proxy YAML config to a secure temporary file.
-        //
-        // `NamedTempFile` creates the file with mode 0600 (owner read/write only)
-        // and a random suffix, preventing both symlink attacks and predictable-path
-        // races.  The file is deleted automatically when `tmp` is dropped, which
-        // happens after `g3proxy::config::load()` has parsed the config into memory.
-        let yaml = self.build_g3proxy_yaml(internal_port);
-        let mut tmp = tempfile::Builder::new()
-            .prefix("ferrovela_g3proxy_")
-            .suffix(".yaml")
-            .tempfile()?;
-        std::io::Write::write_all(&mut tmp, yaml.as_bytes())?;
-        let config_path = tmp.path().to_path_buf();
-        debug!(
-            "g3proxy config written to {} (internal port {})",
-            config_path.display(),
-            internal_port
-        );
-
-        // Initialise g3-daemon global config path (one-time per process).
-        g3_daemon::opts::validate_and_set_config_file(&config_path, "g3proxy")
-            .map_err(|e| format!("g3proxy config file init failed: {e}"))?;
-
-        // Parse YAML into g3proxy's global registries.
-        g3proxy::config::load().map_err(|e| format!("g3proxy config load failed: {e}"))?;
-
-        // Config is now in memory — delete the temp file immediately.
-        drop(tmp);
-
-        // Spawn all sub-systems in dependency order.
-        g3proxy::resolve::spawn_all()
-            .await
-            .map_err(|e| format!("g3proxy resolver spawn failed: {e}"))?;
-        g3proxy::escape::load_all()
-            .await
-            .map_err(|e| format!("g3proxy escaper load failed: {e}"))?;
-        g3proxy::auth::load_all()
-            .await
-            .map_err(|e| format!("g3proxy auth load failed: {e}"))?;
-        g3proxy::audit::load_all()
-            .await
-            .map_err(|e| format!("g3proxy auditor load failed: {e}"))?;
-        g3proxy::serve::spawn_offline_clean();
-        g3proxy::serve::spawn_all()
-            .await
-            .map_err(|e| format!("g3proxy server spawn failed: {e}"))?;
-
-        info!("g3proxy engine running on internal port {}", internal_port);
-
-        // Decide whether to use the auth tunnel for this proxy configuration.
-        // Kerberos and NTLM require a multi-step challenge-response that g3proxy's
-        // ProxyHttp escaper does not support; we handle those connections ourselves.
-        let use_auth_tunnel = self.needs_auth_tunnel();
-
         let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
         info!("Listening on http://{}", listen_addr);
 
@@ -170,15 +83,7 @@ impl Proxy {
                     let pac = Arc::clone(&self.pac);
 
                     tokio::spawn(async move {
-                        handle_connection(
-                            stream,
-                            internal_port,
-                            signal_sender,
-                            if use_auth_tunnel { authenticator } else { None },
-                            config,
-                            pac,
-                        )
-                        .await;
+                        handle_connection(stream, signal_sender, authenticator, config, pac).await;
                     });
                 }
                 Err(e) => {
@@ -186,20 +91,6 @@ impl Proxy {
                 }
             }
         }
-    }
-
-    /// Returns `true` when the configured auth type requires the pre-processor
-    /// to drive the challenge-response handshake itself (Kerberos, NTLM).
-    fn needs_auth_tunnel(&self) -> bool {
-        self.config
-            .upstream
-            .as_ref()
-            .map(|u| {
-                matches!(u.auth_type.as_str(), "kerberos" | "mock_kerberos" | "ntlm")
-                    && u.proxy_url.is_some()
-                    && self.authenticator.is_some()
-            })
-            .unwrap_or(false)
     }
 
     #[cfg(test)]
@@ -231,97 +122,16 @@ impl Proxy {
         }
         Ok(())
     }
-
-    /// Generates a minimal g3proxy YAML configuration from FerroVela's config.
-    fn build_g3proxy_yaml(&self, internal_port: u16) -> String {
-        let escaper_yaml = self.build_escaper_yaml();
-
-        format!(
-            r#"resolver:
-  - name: default
-    type: c-ares
-
-escaper:
-{escaper_yaml}
-server:
-  - name: proxy
-    type: HttpProxy
-    escaper: default
-    listen: "127.0.0.1:{internal_port}"
-"#,
-        )
-    }
-
-    fn build_escaper_yaml(&self) -> String {
-        let Some(upstream) = &self.config.upstream else {
-            return Self::direct_fixed_yaml();
-        };
-
-        let Some(proxy_url) = &upstream.proxy_url else {
-            return Self::direct_fixed_yaml();
-        };
-
-        let Some(raw_addr) = proxy_addr_from_url(proxy_url) else {
-            warn!("could not parse proxy URL (value redacted); falling back to direct");
-            return Self::direct_fixed_yaml();
-        };
-        let addr = yaml_escape(&raw_addr);
-
-        match upstream.auth_type.as_str() {
-            "basic" => {
-                let user = yaml_escape(upstream.username.as_deref().unwrap_or(""));
-                let pass = yaml_escape(upstream.password.as_deref().unwrap_or(""));
-                format!(
-                    r#"  - name: default
-    type: ProxyHttp
-    proxy_addr: "{addr}"
-    proxy_username: "{user}"
-    proxy_password: "{pass}"
-    resolver: default
-"#,
-                )
-            }
-            "kerberos" | "mock_kerberos" | "ntlm" => {
-                // The auth tunnel in this process handles Kerberos/NTLM CONNECT traffic.
-                // g3proxy is configured with DirectFixed so it only handles connections
-                // that the pre-processor explicitly forwards to it (direct/exception paths
-                // and plain-HTTP fallback).
-                warn!(
-                    "auth_type '{}': Kerberos/NTLM CONNECT tunnels are handled by the \
-                     FerroVela pre-processor; g3proxy uses DirectFixed for direct paths",
-                    upstream.auth_type
-                );
-                Self::direct_fixed_yaml()
-            }
-            _ => format!(
-                r#"  - name: default
-    type: ProxyHttp
-    proxy_addr: "{addr}"
-    resolver: default
-"#,
-            ),
-        }
-    }
-
-    fn direct_fixed_yaml() -> String {
-        r#"  - name: default
-    type: DirectFixed
-    resolver: default
-"#
-        .to_string()
-    }
 }
 
 // ─── connection dispatcher ────────────────────────────────────────────────────
 
 /// Routes a single inbound client connection:
 ///
-/// 1. Magic show request   → respond 200 OK + send `ProxySignal::Show`.
-/// 2. Auth tunnel enabled  → [`auth_tunnel::handle_authenticated_tunnel`].
-/// 3. Default              → splice directly to g3proxy's internal port.
+/// 1. Magic show request  → respond 200 OK + send `ProxySignal::Show`.
+/// 2. Everything else     → [`auth_tunnel::handle_authenticated_tunnel`].
 async fn handle_connection(
     mut client: tokio::net::TcpStream,
-    internal_port: u16,
     signal_sender: Option<Sender<ProxySignal>>,
     authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
     config: Arc<Config>,
@@ -354,155 +164,11 @@ async fn handle_connection(
         return;
     }
 
-    // Kerberos / NTLM: auth tunnel handler reads the request and drives the
-    // challenge-response handshake with the upstream proxy itself.
-    if let Some(auth) = authenticator {
-        auth_tunnel::handle_authenticated_tunnel(client, internal_port, auth, config, pac).await;
-        return;
-    }
-
-    // SSRF guard for the g3proxy direct path.
-    //
-    // When g3proxy is configured with a DirectFixed escaper it will connect
-    // directly to whatever target the client requests.  Block CONNECT requests
-    // to private/loopback addresses before the bytes reach g3proxy.
-    // Peek bytes are still in the socket buffer — no bytes are consumed here.
-    if !config.proxy.allow_private_ips {
-        if let Some(target) = ssrf::connect_target_from_peek(&peek_buf[..n]) {
-            if ssrf::is_private_target(&target) {
-                warn!("SSRF blocked: CONNECT to private address {}", target);
-                let _ = client
-                    .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
-                    .await;
-                return;
-            }
-        }
-    }
-
-    // Default: forward raw bytes to g3proxy.
-    let upstream_addr = format!("127.0.0.1:{}", internal_port);
-    let mut upstream = match tokio::net::TcpStream::connect(&upstream_addr).await {
-        Ok(s) => {
-            let _ = s.set_nodelay(true);
-            s
-        }
-        Err(e) => {
-            error!("failed to connect to g3proxy at {}: {}", upstream_addr, e);
-            return;
-        }
-    };
-
-    match tokio::io::copy_bidirectional(&mut client, &mut upstream).await {
-        Ok((down, up)) => debug!("connection closed ({} down, {} up bytes)", down, up),
-        Err(e) => debug!("splice error: {}", e),
-    }
+    // Auth tunnel handler reads headers and dispatches all request types.
+    auth_tunnel::handle_authenticated_tunnel(client, authenticator, config, pac).await;
 }
 
 // ─── proxy resolution (PAC / static config) ───────────────────────────────────
-
-#[cfg(test)]
-mod proxy_addr_tests {
-    use super::proxy_addr_from_url;
-
-    #[test]
-    fn standard_http_url() {
-        assert_eq!(
-            proxy_addr_from_url("http://proxy.corp.com:8080"),
-            Some("proxy.corp.com:8080".to_string())
-        );
-    }
-
-    #[test]
-    fn strips_userinfo() {
-        // Userinfo must not leak into g3proxy's proxy_addr field.
-        assert_eq!(
-            proxy_addr_from_url("http://user:secret@proxy.corp.com:8080"),
-            Some("proxy.corp.com:8080".to_string())
-        );
-    }
-
-    #[test]
-    fn ipv6_gets_brackets() {
-        assert_eq!(
-            proxy_addr_from_url("http://[::1]:3128"),
-            Some("[::1]:3128".to_string())
-        );
-    }
-
-    #[test]
-    fn default_port_for_https() {
-        assert_eq!(
-            proxy_addr_from_url("https://proxy.corp.com"),
-            Some("proxy.corp.com:443".to_string())
-        );
-    }
-
-    #[test]
-    fn default_port_for_http() {
-        assert_eq!(
-            proxy_addr_from_url("http://proxy.corp.com"),
-            Some("proxy.corp.com:80".to_string())
-        );
-    }
-
-    #[test]
-    fn invalid_url_returns_none() {
-        assert_eq!(proxy_addr_from_url("not a url"), None);
-        assert_eq!(proxy_addr_from_url(""), None);
-    }
-}
-
-#[cfg(test)]
-mod yaml_escape_tests {
-    use super::yaml_escape;
-
-    #[test]
-    fn passthrough_normal_strings() {
-        assert_eq!(
-            yaml_escape("proxy.example.com:8080"),
-            "proxy.example.com:8080"
-        );
-        assert_eq!(yaml_escape("user@domain.com"), "user@domain.com");
-        assert_eq!(yaml_escape(""), "");
-    }
-
-    #[test]
-    fn escapes_double_quote() {
-        // A quote without escaping would terminate the YAML scalar early.
-        assert_eq!(yaml_escape(r#"pass"word"#), r#"pass\"word"#);
-    }
-
-    #[test]
-    fn escapes_backslash() {
-        assert_eq!(yaml_escape(r"C:\path"), r"C:\\path");
-    }
-
-    #[test]
-    fn escapes_newline_and_carriage_return() {
-        assert_eq!(yaml_escape("line1\nline2"), r"line1\nline2");
-        assert_eq!(yaml_escape("line1\r\nline2"), r"line1\r\nline2");
-    }
-
-    #[test]
-    fn injection_attempt_is_neutralised() {
-        // Without escaping, a password containing `"` or `\n` would break out of the
-        // YAML double-quoted scalar and inject arbitrary config keys.
-        let malicious = "secret\"\n    injected_key: injected_value\n    x: \"";
-        let escaped = yaml_escape(malicious);
-
-        // No raw newlines remain — they are replaced with the two-char sequence `\n`.
-        assert!(!escaped.contains('\n'));
-        // Every `"` is preceded by `\` — no unescaped double-quotes remain.
-        assert!(!escaped.contains("\"\n") && !escaped.starts_with('"'));
-
-        // Exact expected output: backslash-escaped quotes and `\n` escape sequences.
-        // In a raw string literal r#"..."#, `\"` is backslash+quote and `\n` is backslash+n.
-        assert_eq!(
-            escaped,
-            r#"secret\"\n    injected_key: injected_value\n    x: \""#
-        );
-    }
-}
 
 pub async fn resolve_proxy(
     target: &str,
@@ -540,5 +206,56 @@ pub async fn resolve_proxy(
         }
     } else {
         config.upstream.as_ref().and_then(|u| u.proxy_url.clone())
+    }
+}
+
+#[cfg(test)]
+mod proxy_addr_tests {
+    use super::proxy_addr_from_url;
+
+    #[test]
+    fn standard_http_url() {
+        assert_eq!(
+            proxy_addr_from_url("http://proxy.corp.com:8080"),
+            Some("proxy.corp.com:8080".to_string())
+        );
+    }
+
+    #[test]
+    fn strips_userinfo() {
+        assert_eq!(
+            proxy_addr_from_url("http://user:secret@proxy.corp.com:8080"),
+            Some("proxy.corp.com:8080".to_string())
+        );
+    }
+
+    #[test]
+    fn ipv6_gets_brackets() {
+        assert_eq!(
+            proxy_addr_from_url("http://[::1]:3128"),
+            Some("[::1]:3128".to_string())
+        );
+    }
+
+    #[test]
+    fn default_port_for_https() {
+        assert_eq!(
+            proxy_addr_from_url("https://proxy.corp.com"),
+            Some("proxy.corp.com:443".to_string())
+        );
+    }
+
+    #[test]
+    fn default_port_for_http() {
+        assert_eq!(
+            proxy_addr_from_url("http://proxy.corp.com"),
+            Some("proxy.corp.com:80".to_string())
+        );
+    }
+
+    #[test]
+    fn invalid_url_returns_none() {
+        assert_eq!(proxy_addr_from_url("not a url"), None);
+        assert_eq!(proxy_addr_from_url(""), None);
     }
 }

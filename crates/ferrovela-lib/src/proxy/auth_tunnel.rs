@@ -18,6 +18,7 @@
 /// For Kerberos it typically resolves in one authenticated round.
 use std::sync::Arc;
 
+use base64::Engine as _;
 use log::{debug, error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -212,17 +213,16 @@ pub async fn perform_authenticated_connect(
     Err(format!("authentication exhausted all rounds; final status: {status}").into())
 }
 
-/// Top-level handler for a single client connection when Kerberos or NTLM is
-/// the configured auth type.
+/// Top-level handler for a single client connection.
 ///
 /// Routing:
-/// - `CONNECT`  + proxy needed  → [`perform_authenticated_connect`] + splice.
-/// - `CONNECT`  + direct        → plain TCP connect to `target` + splice.
-/// - anything else              → forward buffered request to g3proxy.
+/// - `CONNECT` + upstream + authenticator → [`perform_authenticated_connect`] + splice.
+/// - `CONNECT` + upstream + no auth       → plain CONNECT tunnel (no credentials).
+/// - `CONNECT` + direct                   → TCP connect to `target` + SSRF guard + splice.
+/// - anything else                        → [`handle_plain_http_request`].
 pub async fn handle_authenticated_tunnel(
     mut client: TcpStream,
-    internal_port: u16,
-    authenticator: Arc<dyn UpstreamAuthenticator>,
+    authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
     config: Arc<crate::config::Config>,
     pac: Arc<Option<crate::pac::PacEngine>>,
 ) {
@@ -247,31 +247,83 @@ pub async fn handle_authenticated_tunnel(
 
         match resolved {
             Some(proxy_addr) => {
-                // ── auth tunnel ──────────────────────────────────────────
-                match perform_authenticated_connect(&proxy_addr, &target, &authenticator).await {
-                    Ok(mut upstream) => {
-                        let _ = client
-                            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
-                            .await;
-                        if let Err(e) =
-                            tokio::io::copy_bidirectional(&mut client, &mut upstream).await
-                        {
-                            debug!("splice error for {}: {}", target, e);
+                if let Some(auth) = authenticator {
+                    // ── authenticated CONNECT (Kerberos, NTLM, Basic) ──────
+                    match perform_authenticated_connect(&proxy_addr, &target, &auth).await {
+                        Ok(mut upstream) => {
+                            let _ = client
+                                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                                .await;
+                            if let Err(e) =
+                                tokio::io::copy_bidirectional(&mut client, &mut upstream).await
+                            {
+                                debug!("splice error for {}: {}", target, e);
+                            }
+                        }
+                        Err(e) => {
+                            error!("auth tunnel to {} via {}: {}", target, proxy_addr, e);
+                            let _ = client
+                                .write_all(
+                                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
+                                )
+                                .await;
                         }
                     }
-                    Err(e) => {
-                        error!("auth tunnel to {} via {}: {}", target, proxy_addr, e);
-                        let _ = client
-                            .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
-                            .await;
+                } else {
+                    // ── unauthenticated CONNECT through upstream proxy ─────
+                    let addr = normalize_proxy_addr(&proxy_addr);
+                    match TcpStream::connect(&addr).await {
+                        Ok(mut upstream) => {
+                            let _ = upstream.set_nodelay(true);
+                            if send_connect(&mut upstream, &target, None).await.is_err() {
+                                return;
+                            }
+                            match read_proxy_response(&mut upstream).await {
+                                Ok((200, _)) => {
+                                    let _ = client
+                                        .write_all(
+                                            b"HTTP/1.1 200 Connection established\r\n\r\n",
+                                        )
+                                        .await;
+                                    let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream)
+                                        .await;
+                                }
+                                Ok((status, _)) => {
+                                    error!(
+                                        "upstream proxy returned {} for CONNECT {}",
+                                        status, target
+                                    );
+                                    let _ = client
+                                        .write_all(
+                                            b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
+                                        )
+                                        .await;
+                                }
+                                Err(e) => {
+                                    error!("upstream proxy response for {}: {}", target, e);
+                                    let _ = client
+                                        .write_all(
+                                            b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
+                                        )
+                                        .await;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("connect to upstream {}: {}", addr, e);
+                            let _ = client
+                                .write_all(
+                                    b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
+                                )
+                                .await;
+                        }
                     }
                 }
             }
             None => {
                 // ── direct CONNECT (exception or no upstream) ────────────
-                // SSRF guard: reject connections to private/loopback addresses
-                // unless the operator has explicitly allowed them.
-                if !config.proxy.allow_private_ips && crate::proxy::ssrf::is_private_target(&target)
+                if !config.proxy.allow_private_ips
+                    && crate::proxy::ssrf::is_private_target(&target)
                 {
                     log::warn!("SSRF blocked: direct CONNECT to private address {}", target);
                     let _ = client
@@ -301,33 +353,174 @@ pub async fn handle_authenticated_tunnel(
             }
         }
     } else {
-        // Plain HTTP request: re-inject buffered headers into a g3proxy connection.
-        forward_buffered_to_g3proxy(&mut client, internal_port, headers.as_bytes()).await;
+        // Plain HTTP request: handle natively.
+        handle_plain_http_request(&mut client, &headers, &config, &pac).await;
     }
 }
 
-/// Send already-read `buffered` bytes to g3proxy followed by the rest of the
-/// client stream (used when the request headers were consumed for routing).
-async fn forward_buffered_to_g3proxy(client: &mut TcpStream, internal_port: u16, buffered: &[u8]) {
-    let addr = format!("127.0.0.1:{internal_port}");
-    let mut upstream = match TcpStream::connect(&addr).await {
-        Ok(s) => {
-            let _ = s.set_nodelay(true);
-            s
-        }
-        Err(e) => {
-            error!("connect to g3proxy at {}: {}", addr, e);
+// ─── plain HTTP forwarding ────────────────────────────────────────────────────
+
+/// Handle a plain HTTP (non-CONNECT) request from the client.
+///
+/// - Upstream proxy configured: connect to it and forward the request as-is,
+///   injecting a `Proxy-Authorization` header for Basic auth.
+/// - No upstream (direct): parse the URL, apply SSRF guard, rewrite the
+///   request line to origin-form, connect to the target, and relay.
+async fn handle_plain_http_request(
+    client: &mut TcpStream,
+    headers: &str,
+    config: &Arc<crate::config::Config>,
+    pac: &Arc<Option<crate::pac::PacEngine>>,
+) {
+    let first_line = headers.lines().next().unwrap_or("");
+    let url_str = first_line.split_whitespace().nth(1).unwrap_or("");
+
+    let target = match target_from_http_url(url_str) {
+        Some(t) => t,
+        None => {
+            debug!("plain HTTP: cannot parse target from URL: {}", url_str);
+            let _ = client
+                .write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+                .await;
             return;
         }
     };
 
-    if upstream.write_all(buffered).await.is_err() {
-        return;
-    }
+    let resolved = crate::proxy::resolve_proxy(&target, config, pac).await;
 
-    if let Err(e) = tokio::io::copy_bidirectional(client, &mut upstream).await {
-        debug!("g3proxy forward error: {}", e);
+    match resolved {
+        Some(proxy_url) => {
+            // Forward to upstream proxy, optionally adding Basic auth.
+            let upstream_addr = normalize_proxy_addr(&proxy_url);
+            let mut upstream = match TcpStream::connect(&upstream_addr).await {
+                Ok(s) => {
+                    let _ = s.set_nodelay(true);
+                    s
+                }
+                Err(e) => {
+                    error!("plain HTTP: connect to upstream {}: {}", upstream_addr, e);
+                    let _ = client
+                        .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                        .await;
+                    return;
+                }
+            };
+            let request = inject_basic_proxy_auth(headers, config);
+            if upstream.write_all(request.as_bytes()).await.is_err() {
+                return;
+            }
+            if let Err(e) = tokio::io::copy_bidirectional(client, &mut upstream).await {
+                debug!("plain HTTP upstream relay error: {}", e);
+            }
+        }
+        None => {
+            // Direct connection: SSRF guard, rewrite request line, relay.
+            if !config.proxy.allow_private_ips && crate::proxy::ssrf::is_private_target(&target) {
+                log::warn!("SSRF blocked: plain HTTP to private address {}", target);
+                let _ = client
+                    .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                    .await;
+                return;
+            }
+            let mut upstream = match TcpStream::connect(&target).await {
+                Ok(s) => {
+                    let _ = s.set_nodelay(true);
+                    s
+                }
+                Err(e) => {
+                    error!("plain HTTP: direct connect to {}: {}", target, e);
+                    let _ = client
+                        .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                        .await;
+                    return;
+                }
+            };
+            let request = rewrite_request_for_direct(headers, url_str);
+            if upstream.write_all(request.as_bytes()).await.is_err() {
+                return;
+            }
+            if let Err(e) = tokio::io::copy_bidirectional(client, &mut upstream).await {
+                debug!("plain HTTP direct relay error: {}", e);
+            }
+        }
     }
+}
+
+/// Extract `host:port` from a plain HTTP proxy request URL.
+///
+/// `http://example.com:8080/path` → `"example.com:8080"`
+/// `http://example.com/path`      → `"example.com:80"`
+fn target_from_http_url(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let port = u.port_or_known_default()?;
+    match u.host()? {
+        url::Host::Ipv6(addr) => Some(format!("[{}]:{}", addr, port)),
+        host => Some(format!("{}:{}", host, port)),
+    }
+}
+
+/// Normalise a proxy address string to `host:port` suitable for `TcpStream::connect`.
+///
+/// `resolve_proxy` returns a full URL (from static config) or a bare `host:port`
+/// (from PAC).  This function handles both forms.
+fn normalize_proxy_addr(proxy: &str) -> String {
+    if proxy.contains("://") {
+        crate::proxy::proxy_addr_from_url(proxy).unwrap_or_else(|| proxy.to_string())
+    } else {
+        proxy.to_string()
+    }
+}
+
+/// Inject a `Proxy-Authorization: Basic …` header when Basic auth is configured.
+///
+/// Inserts the header before the blank line that terminates the headers block
+/// so that the `\r\n\r\n` terminator is preserved at the very end.
+fn inject_basic_proxy_auth(headers: &str, config: &Arc<crate::config::Config>) -> String {
+    let Some(upstream) = &config.upstream else {
+        return headers.to_string();
+    };
+    if upstream.auth_type != "basic" {
+        return headers.to_string();
+    }
+    let user = upstream.username.as_deref().unwrap_or("");
+    let pass = upstream.password.as_deref().unwrap_or("");
+    let creds = base64::prelude::BASE64_STANDARD.encode(format!("{user}:{pass}"));
+    let auth_line = format!("Proxy-Authorization: Basic {creds}\r\n");
+
+    // Headers string ends with \r\n\r\n; insert before the terminal \r\n.
+    if let Some(pos) = memchr::memmem::find(headers.as_bytes(), b"\r\n\r\n") {
+        format!("{}{}\r\n", &headers[..pos + 2], auth_line)
+    } else {
+        format!("{}{}\r\n", headers, auth_line)
+    }
+}
+
+/// Rewrite a proxy-style request line to origin-form for direct connections.
+///
+/// `GET http://example.com/path?q=1 HTTP/1.1` → `GET /path?q=1 HTTP/1.1`
+fn rewrite_request_for_direct(headers: &str, url: &str) -> String {
+    let path = url::Url::parse(url)
+        .ok()
+        .map(|u| {
+            let mut p = u.path().to_string();
+            if let Some(q) = u.query() {
+                p.push('?');
+                p.push_str(q);
+            }
+            if p.is_empty() { "/".to_string() } else { p }
+        })
+        .unwrap_or_else(|| "/".to_string());
+
+    if let Some(eol) = headers.find("\r\n") {
+        let first_line = &headers[..eol];
+        let mut parts = first_line.splitn(3, ' ');
+        if let (Some(method), Some(_url), Some(version)) =
+            (parts.next(), parts.next(), parts.next())
+        {
+            return format!("{} {} {}{}", method, path, version, &headers[eol..]);
+        }
+    }
+    headers.to_string()
 }
 
 #[cfg(test)]
@@ -449,5 +642,89 @@ mod tests {
         assert_eq!(parse_status("not a response"), None);
         assert_eq!(parse_status("HTTP/1.1"), None);
         assert_eq!(parse_status(""), None);
+    }
+
+    // ── target_from_http_url ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_target_from_http_url_with_port() {
+        assert_eq!(
+            target_from_http_url("http://example.com:8080/path"),
+            Some("example.com:8080".to_string())
+        );
+    }
+
+    #[test]
+    fn test_target_from_http_url_default_port() {
+        assert_eq!(
+            target_from_http_url("http://example.com/path"),
+            Some("example.com:80".to_string())
+        );
+    }
+
+    #[test]
+    fn test_target_from_http_url_invalid() {
+        assert_eq!(target_from_http_url("not-a-url"), None);
+        assert_eq!(target_from_http_url(""), None);
+    }
+
+    // ── rewrite_request_for_direct ────────────────────────────────────────────
+
+    #[test]
+    fn test_rewrite_request_for_direct_basic() {
+        let headers = "GET http://example.com/path HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let result = rewrite_request_for_direct(headers, "http://example.com/path");
+        assert!(result.starts_with("GET /path HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn test_rewrite_request_for_direct_with_query() {
+        let headers = "GET http://example.com/search?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let result = rewrite_request_for_direct(headers, "http://example.com/search?q=1");
+        assert!(result.starts_with("GET /search?q=1 HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn test_rewrite_request_for_direct_root() {
+        let headers = "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let result = rewrite_request_for_direct(headers, "http://example.com/");
+        assert!(result.starts_with("GET / HTTP/1.1\r\n"));
+    }
+
+    // ── inject_basic_proxy_auth ───────────────────────────────────────────────
+
+    #[test]
+    fn test_inject_basic_proxy_auth_adds_header() {
+        use crate::config::{Config, ProxyConfig, UpstreamConfig};
+        let config = Arc::new(Config {
+            proxy: ProxyConfig::default(),
+            upstream: Some(UpstreamConfig {
+                auth_type: "basic".to_string(),
+                username: Some("user".to_string()),
+                password: Some("pass".to_string()),
+                ..Default::default()
+            }),
+            exceptions: None,
+        });
+        let headers = "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let result = inject_basic_proxy_auth(headers, &config);
+        assert!(result.contains("Proxy-Authorization: Basic dXNlcjpwYXNz\r\n"));
+        assert!(result.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn test_inject_basic_proxy_auth_skips_non_basic() {
+        use crate::config::{Config, ProxyConfig, UpstreamConfig};
+        let config = Arc::new(Config {
+            proxy: ProxyConfig::default(),
+            upstream: Some(UpstreamConfig {
+                auth_type: "ntlm".to_string(),
+                ..Default::default()
+            }),
+            exceptions: None,
+        });
+        let headers = "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let result = inject_basic_proxy_auth(headers, &config);
+        assert_eq!(result, headers);
     }
 }
