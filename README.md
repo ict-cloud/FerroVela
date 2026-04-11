@@ -183,7 +183,7 @@ Requests Per Second (RPS): 6248.71
 
 ## Dependencies
 
-- `g3proxy`: Proxy engine for upstream chaining (ByteDance).
+- `rama`: HTTP proxy framework providing the TCP listener, HTTP/1.1 server, and CONNECT upgrade pipeline.
 - `tokio`: Asynchronous runtime.
 - `core-foundation`: macOS CFPreferences integration for configuration storage.
 - `rquickjs`: JavaScript engine for PAC file evaluation.

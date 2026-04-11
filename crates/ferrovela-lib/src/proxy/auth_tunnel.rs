@@ -127,6 +127,24 @@ async fn read_proxy_response(
     Ok((status, challenge))
 }
 
+/// Send a `CONNECT target HTTP/1.1` request and return only the status code.
+/// Used by the rama CONNECT handler for the unauthenticated upstream path.
+pub(crate) async fn send_connect_request(
+    stream: &mut TcpStream,
+    target: &str,
+    proxy_authorization: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    send_connect(stream, target, proxy_authorization).await
+}
+
+/// Read a proxy CONNECT response and return only the status code.
+/// Used by the rama CONNECT handler for the unauthenticated upstream path.
+pub(crate) async fn read_connect_response(
+    stream: &mut TcpStream,
+) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
+    read_proxy_response(stream).await.map(|(status, _)| status)
+}
+
 /// Write a `CONNECT target HTTP/1.1` request, optionally adding a
 /// `Proxy-Authorization` header.
 async fn send_connect(
@@ -457,7 +475,7 @@ fn target_from_http_url(url: &str) -> Option<String> {
 ///
 /// `resolve_proxy` returns a full URL (from static config) or a bare `host:port`
 /// (from PAC).  This function handles both forms.
-fn normalize_proxy_addr(proxy: &str) -> String {
+pub(crate) fn normalize_proxy_addr(proxy: &str) -> String {
     if proxy.contains("://") {
         crate::proxy::proxy_addr_from_url(proxy).unwrap_or_else(|| proxy.to_string())
     } else {

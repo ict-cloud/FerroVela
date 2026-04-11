@@ -3,6 +3,7 @@
 ## [0.4.4] - unreleased
 
 ### Changed
+- **Proxy engine replaced: g3proxy → rama.** The HTTP server and CONNECT tunneling layer now use [rama 0.2](https://github.com/plabayo/rama) instead of g3proxy/g3-daemon. Traffic flows through rama's `TcpListener` → `HttpServer::auto` → `UpgradeLayer` stack. A custom `ConnectResponder` performs the SSRF check and PAC resolution before the TCP upgrade commits, and `ConnectHandler` drives the authenticated or direct tunnel afterwards. All 104 unit tests pass unchanged.
 - **Log timestamps.** Each log line now includes an ISO 8601 UTC timestamp (e.g. `2026-04-09T10:23:45Z`) prepended before the log level, making it straightforward to correlate log entries with events.
 
 
