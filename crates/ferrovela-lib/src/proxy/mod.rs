@@ -538,27 +538,50 @@ impl Proxy {
         Ok(())
     }
 
+    /// Run the proxy on an already-bound listener.
+    ///
+    /// The full rama pipeline (HTTP parsing, CONNECT upgrade, SSRF guard, PAC,
+    /// authentication) applies exactly as in [`Proxy::run`].  The test suite
+    /// uses this variant so it can bind to port 0 and discover the actual port
+    /// before starting the proxy.
     #[cfg(test)]
     pub async fn run_with_listener(
         &self,
         listener: tokio::net::TcpListener,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let upstream_addr = self
-            .config
-            .upstream
-            .as_ref()
-            .and_then(|u| u.proxy_url.clone());
+        use rama::{
+            http::{layer::upgrade::UpgradeLayer, matcher::MethodMatcher, server::HttpServer},
+            rt::Executor,
+            service::service_fn,
+            tcp::server::TcpListener,
+            Layer,
+        };
 
-        while let Ok((mut client, _)) = listener.accept().await {
-            let addr = upstream_addr.clone();
-            tokio::spawn(async move {
-                if let Some(addr) = addr {
-                    if let Ok(mut upstream) = tokio::net::TcpStream::connect(&addr).await {
-                        let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
-                    }
-                }
-            });
-        }
+        let state = ProxyState {
+            config: Arc::clone(&self.config),
+            pac: Arc::clone(&self.pac),
+            authenticator: self.authenticator.clone(),
+            signal_sender: self.signal_sender.clone(),
+        };
+
+        let exec = Executor::default();
+
+        let connect_responder = ConnectResponder {
+            config: Arc::clone(&self.config),
+            pac: Arc::clone(&self.pac),
+        };
+
+        let http_service = HttpServer::auto(exec).service(
+            UpgradeLayer::new(MethodMatcher::CONNECT, connect_responder, ConnectHandler)
+                .into_layer(service_fn(plain_http_handler)),
+        );
+
+        let std_listener = listener.into_std()?;
+        TcpListener::try_from(std_listener)?
+            .with_state(state)
+            .serve(http_service)
+            .await;
+
         Ok(())
     }
 }
