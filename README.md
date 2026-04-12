@@ -181,6 +181,23 @@ Total Duration: 800.16ms
 Requests Per Second (RPS): 6248.71
 ```
 
+Criterion micro-benchmarks covering the CONNECT path, header parsing, and request serialization are also available:
+
+```bash
+# Save a baseline before making changes
+cargo bench -p ferrovela-lib -- --save-baseline main
+
+# Compare against the baseline after changes
+cargo bench -p ferrovela-lib -- --baseline main
+```
+
+### Performance design notes
+
+- **Release profile**: compiled with `opt-level = 3` (speed-optimized, not size-optimized). This enables autovectorization and aggressive inlining across the whole binary.
+- **CONNECT hot path**: header bytes are decoded zero-copy (`String::from_utf8` ownership transfer). The `Proxy-Authenticate` header is parsed without heap allocation (`memchr::memmem` + borrowed `&str`). NTLM/Basic credentials are held as `Arc<str>` — `create_session()` is atomic reference-count increments, not heap copies.
+- **Plain HTTP path**: request headers are serialized by writing byte slices directly into a pre-allocated `Vec<u8>` — no intermediate per-header `String` allocations. Basic `Proxy-Authorization` is pre-computed once at startup. Response body bytes are extracted in-place via `drain` (memmove, no second allocation).
+- **Exception matching**: host patterns are pre-compiled at config load into a `HashSet` (exact matches, O(1)) and a suffix `Vec` (wildcard patterns, O(n)); the per-request scan of the raw pattern list is eliminated.
+
 ## Dependencies
 
 - `rama`: HTTP proxy framework providing the TCP listener, HTTP/1.1 server, and CONNECT upgrade pipeline.

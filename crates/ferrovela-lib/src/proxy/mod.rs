@@ -46,6 +46,9 @@ struct ProxyState {
     pac: Arc<Option<PacEngine>>,
     authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
     signal_sender: Option<Sender<ProxySignal>>,
+    /// Pre-computed Base64 of `"user:pass"` for Basic upstream auth.
+    /// `None` when no Basic auth is configured.
+    basic_auth_b64: Option<Arc<str>>,
 }
 
 // ─── extension types stored in Context during the CONNECT upgrade ─────────────
@@ -247,13 +250,19 @@ async fn plain_http_handler(
     }
 
     // ── Derive target host:port for proxy resolution ───────────────────
-    let uri = req.uri().clone();
-    let host = uri.host().unwrap_or("");
-    let port = uri
+    // §9: Access URI components directly without cloning the whole Uri.
+    // `host` becomes an owned String so the borrow on `req` is released
+    // before `req` is moved into the forward helpers below.
+    let host = req.uri().host().unwrap_or("").to_owned();
+    let port = req
+        .uri()
         .port_u16()
-        .or_else(|| match uri.scheme_str() {
-            Some("https") => Some(443),
-            _ => Some(80),
+        .or_else(|| {
+            if req.uri().scheme_str() == Some("https") {
+                Some(443)
+            } else {
+                Some(80)
+            }
         })
         .unwrap_or(80);
     let target = if host.contains(':') {
@@ -271,7 +280,8 @@ async fn plain_http_handler(
     match resolved {
         Some(proxy_url) => {
             let upstream_addr = auth_tunnel::normalize_proxy_addr(&proxy_url);
-            forward_plain_http_to_upstream(req, &upstream_addr, &state.config).await
+            forward_plain_http_to_upstream(req, &upstream_addr, state.basic_auth_b64.as_deref())
+                .await
         }
         None => {
             // SSRF guard for plain HTTP direct connections.
@@ -285,10 +295,13 @@ async fn plain_http_handler(
 }
 
 /// Forward a plain HTTP request to an upstream proxy, injecting Basic auth.
+///
+/// `basic_auth_b64` is the pre-computed Base64 of `"user:pass"` (from
+/// `ProxyState`); when `Some`, `Proxy-Authorization: Basic <b64>` is injected.
 async fn forward_plain_http_to_upstream(
     req: rama::http::Request,
     upstream_addr: &str,
-    config: &Arc<Config>,
+    basic_auth_b64: Option<&str>,
 ) -> Result<rama::http::Response, Infallible> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -303,18 +316,17 @@ async fn forward_plain_http_to_upstream(
         }
     };
 
-    // Serialize the request back to wire format and inject auth header if needed.
-    let raw = match serialize_http_request(req, config) {
-        Ok(r) => r,
-        Err(_) => return Ok(bad_request()),
-    };
+    // Serialize the request to wire format using the zero-allocation writer.
+    let mut raw = Vec::with_capacity(2048);
+    write_http_request(&mut raw, req, true, basic_auth_b64);
 
     if upstream.write_all(&raw).await.is_err() {
         return Ok(bad_gateway());
     }
 
-    // Read and return the upstream response.
-    let mut buf = Vec::new();
+    // 8 KiB initial capacity covers headers + most small response bodies
+    // without triggering the realloc-doubling cascade from Vec::new().
+    let mut buf = Vec::with_capacity(8 * 1024);
     let _ = upstream.read_to_end(&mut buf).await;
     parse_raw_response(buf)
 }
@@ -337,98 +349,103 @@ async fn forward_plain_http_direct(
         }
     };
 
-    let raw = match serialize_http_request_direct(req) {
-        Ok(r) => r,
-        Err(_) => return Ok(bad_request()),
-    };
+    let mut raw = Vec::with_capacity(2048);
+    write_http_request(&mut raw, req, false, None);
 
     if upstream.write_all(&raw).await.is_err() {
         return Ok(bad_gateway());
     }
 
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(8 * 1024);
     let _ = upstream.read_to_end(&mut buf).await;
     parse_raw_response(buf)
 }
 
-/// Serialize a rama `Request` to HTTP/1.1 wire format, injecting `Proxy-Authorization`
-/// for Basic auth when configured.
-fn serialize_http_request(req: rama::http::Request, config: &Arc<Config>) -> Result<Vec<u8>, ()> {
+/// Serialise a rama `Request` to HTTP/1.1 wire format, writing directly into
+/// the caller-supplied `Vec<u8>` via `extend_from_slice`.
+///
+/// - `absolute_form = true`  → absolute-form URI  (upstream proxy path)
+/// - `absolute_form = false` → origin-form path   (direct connection path)
+/// - `basic_auth_b64`        → when `Some`, appends `Proxy-Authorization: Basic <b64>\r\n`
+///
+/// No intermediate `String` allocations per header — all bytes are copied
+/// directly from rama's owned header map into `out`.
+fn write_http_request(
+    out: &mut Vec<u8>,
+    req: rama::http::Request,
+    absolute_form: bool,
+    basic_auth_b64: Option<&str>,
+) {
     let (parts, _body) = req.into_parts();
-    let method = parts.method.as_str();
-    let uri = parts.uri.to_string();
-    let version = "HTTP/1.1";
 
-    let mut out = format!("{} {} {}\r\n", method, uri, version);
+    // Request line
+    out.extend_from_slice(parts.method.as_str().as_bytes());
+    out.push(b' ');
+    if absolute_form {
+        out.extend_from_slice(parts.uri.to_string().as_bytes());
+    } else {
+        let path = parts
+            .uri
+            .path_and_query()
+            .map(|pq| pq.as_str())
+            .unwrap_or("/");
+        out.extend_from_slice(path.as_bytes());
+    }
+    out.extend_from_slice(b" HTTP/1.1\r\n");
+
+    // Headers — zero allocations: name and value bytes come from rama's map.
     for (name, value) in &parts.headers {
         if let Ok(v) = value.to_str() {
-            out.push_str(&format!("{}: {}\r\n", name, v));
+            out.extend_from_slice(name.as_str().as_bytes());
+            out.extend_from_slice(b": ");
+            out.extend_from_slice(v.as_bytes());
+            out.extend_from_slice(b"\r\n");
         }
     }
 
-    // Inject Basic Proxy-Authorization if configured.
-    if let Some(upstream) = &config.upstream {
-        if upstream.auth_type == "basic" {
-            let user = upstream.username.as_deref().unwrap_or("");
-            let pass = upstream.password.as_deref().unwrap_or("");
-            let creds = base64::prelude::BASE64_STANDARD.encode(format!("{user}:{pass}"));
-            out.push_str(&format!("Proxy-Authorization: Basic {}\r\n", creds));
-        }
+    // Inject pre-computed Basic Proxy-Authorization if provided.
+    if let Some(b64) = basic_auth_b64 {
+        out.extend_from_slice(b"Proxy-Authorization: Basic ");
+        out.extend_from_slice(b64.as_bytes());
+        out.extend_from_slice(b"\r\n");
     }
 
-    out.push_str("\r\n");
-    Ok(out.into_bytes())
-}
-
-/// Serialize a rama `Request` to HTTP/1.1 wire format in origin-form (no host in URI)
-/// for direct connections.
-fn serialize_http_request_direct(req: rama::http::Request) -> Result<Vec<u8>, ()> {
-    let (parts, _body) = req.into_parts();
-    let method = parts.method.as_str();
-    // Use only path+query for direct connections (origin-form).
-    let path = parts
-        .uri
-        .path_and_query()
-        .map(|pq| pq.as_str())
-        .unwrap_or("/");
-    let version = "HTTP/1.1";
-
-    let mut out = format!("{} {} {}\r\n", method, path, version);
-    for (name, value) in &parts.headers {
-        if let Ok(v) = value.to_str() {
-            out.push_str(&format!("{}: {}\r\n", name, v));
-        }
-    }
-    out.push_str("\r\n");
-    Ok(out.into_bytes())
+    out.extend_from_slice(b"\r\n");
 }
 
 /// Parse a raw HTTP/1.1 response buffer into a rama `Response`.
-fn parse_raw_response(buf: Vec<u8>) -> Result<rama::http::Response, Infallible> {
-    // Extract the status line and headers, then return the body verbatim.
-    let raw_str = String::from_utf8_lossy(&buf);
-    let status: u16 = raw_str
-        .lines()
-        .next()
-        .and_then(|l| l.split_whitespace().nth(1))
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(502);
+///
+/// §2: Uses `drain` to strip header bytes from `buf` in-place (a `memmove`
+/// within the existing allocation) rather than copying body bytes into a new
+/// `Vec` — eliminates one heap allocation per plain-HTTP response.
+fn parse_raw_response(mut buf: Vec<u8>) -> Result<rama::http::Response, Infallible> {
+    // Parse the status code from the first line (UTF-8 borrow, no allocation).
+    let status: u16 = {
+        let raw_str = String::from_utf8_lossy(&buf);
+        raw_str
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(502)
+        // `raw_str` borrow is released here before buf is mutated below.
+    };
 
     let status_code =
         rama::http::StatusCode::from_u16(status).unwrap_or(rama::http::StatusCode::BAD_GATEWAY);
 
-    // Find body start after \r\n\r\n.
-    let body_start = buf
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
+    // Locate the header/body boundary using SIMD-accelerated memmem.
+    let body_start = crate::proxy::http_utils::find_subsequence(&buf, b"\r\n\r\n")
         .map(|p| p + 4)
         .unwrap_or(buf.len());
 
-    let body_bytes = buf[body_start..].to_vec();
+    // Drain header bytes in-place: body bytes shift to the front of `buf`
+    // (one memmove within the same allocation, no new Vec).
+    drop(buf.drain(..body_start));
 
     Ok(rama::http::Response::builder()
         .status(status_code)
-        .body(rama::http::Body::from(body_bytes))
+        .body(rama::http::Body::from(buf))
         .unwrap())
 }
 
@@ -465,6 +482,7 @@ pub struct Proxy {
     pac: Arc<Option<PacEngine>>,
     authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
     signal_sender: Option<Sender<ProxySignal>>,
+    basic_auth_b64: Option<Arc<str>>,
 }
 
 impl Proxy {
@@ -480,11 +498,29 @@ impl Proxy {
             None
         };
 
+        // Pre-compute the Base64 credential string for Basic auth so that
+        // `forward_plain_http_to_upstream` never performs crypto per request.
+        let basic_auth_b64 = config
+            .upstream
+            .as_ref()
+            .filter(|u| u.auth_type == "basic")
+            .and_then(|u| {
+                let user = u.username.as_deref().unwrap_or("");
+                let pass = u.password.as_deref().unwrap_or("");
+                if user.is_empty() {
+                    return None;
+                }
+                let encoded =
+                    base64::prelude::BASE64_STANDARD.encode(format!("{}:{}", user, pass));
+                Some(Arc::from(encoded.as_str()))
+            });
+
         Proxy {
             config,
             pac: Arc::new(pac),
             authenticator,
             signal_sender,
+            basic_auth_b64,
         }
     }
 
@@ -513,6 +549,7 @@ impl Proxy {
             pac: Arc::clone(&self.pac),
             authenticator: self.authenticator.clone(),
             signal_sender: self.signal_sender.clone(),
+            basic_auth_b64: self.basic_auth_b64.clone(),
         };
 
         let exec = Executor::default();
@@ -562,6 +599,7 @@ impl Proxy {
             pac: Arc::clone(&self.pac),
             authenticator: self.authenticator.clone(),
             signal_sender: self.signal_sender.clone(),
+            basic_auth_b64: self.basic_auth_b64.clone(),
         };
 
         let exec = Executor::default();

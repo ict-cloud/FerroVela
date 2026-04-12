@@ -58,7 +58,11 @@ pub async fn read_http_headers(
         }
     }
 
-    Ok(String::from_utf8_lossy(&buf).into_owned())
+    // `from_utf8` transfers ownership of `buf` into a `String` without any
+    // heap allocation when the bytes are valid UTF-8 (which HTTP headers
+    // always are).  The previous `from_utf8_lossy(&buf).into_owned()` was
+    // borrowing `buf` and then cloning, wasting one full heap copy per call.
+    Ok(String::from_utf8(buf).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
 }
 
 /// Extract the target `host:port` from a CONNECT request line, e.g.
@@ -79,18 +83,20 @@ pub fn http_method(request_line: &str) -> &str {
 
 /// Return the value of the `Proxy-Authenticate` header (first occurrence),
 /// e.g. `"NTLM"`, `"NTLM <base64>"`, `"Negotiate"`, `"Negotiate <base64>"`.
-fn find_proxy_authenticate(headers: &str) -> Option<String> {
+///
+/// Returns a `&str` borrowed directly from `headers` — no heap allocation.
+fn find_proxy_authenticate(headers: &str) -> Option<&str> {
     for line in headers.lines().skip(1) {
         let trimmed = line.trim();
         if trimmed.len() > 20 && trimmed[..20].eq_ignore_ascii_case("Proxy-Authenticate: ") {
-            return Some(trimmed[20..].trim().to_string());
+            return Some(trimmed[20..].trim());
         }
         // Handle "Proxy-Authenticate:" without trailing space
         if let Some(rest) = trimmed
             .strip_prefix("Proxy-Authenticate:")
             .or_else(|| trimmed.strip_prefix("proxy-authenticate:"))
         {
-            return Some(rest.trim().to_string());
+            return Some(rest.trim());
         }
     }
     None
@@ -115,7 +121,9 @@ async fn read_proxy_response(
     let raw = read_http_headers(stream).await?;
 
     let status = parse_status(&raw).ok_or("could not parse HTTP status")?;
-    let challenge = find_proxy_authenticate(&raw);
+    // `find_proxy_authenticate` returns a `&str` into `raw`; convert to
+    // owned only once here, at the boundary where ownership is required.
+    let challenge = find_proxy_authenticate(&raw).map(str::to_owned);
 
     // Drain body so the connection stays usable for the next request.
     let content_length = crate::proxy::http_utils::parse_content_length(&raw);
@@ -603,16 +611,13 @@ mod tests {
     #[test]
     fn test_find_proxy_authenticate_ntlm() {
         let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: NTLM\r\nContent-Length: 0\r\n\r\n";
-        assert_eq!(find_proxy_authenticate(headers), Some("NTLM".to_string()));
+        assert_eq!(find_proxy_authenticate(headers), Some("NTLM"));
     }
 
     #[test]
     fn test_find_proxy_authenticate_negotiate_with_token() {
         let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Negotiate YIIGhg==\r\n\r\n";
-        assert_eq!(
-            find_proxy_authenticate(headers),
-            Some("Negotiate YIIGhg==".to_string())
-        );
+        assert_eq!(find_proxy_authenticate(headers), Some("Negotiate YIIGhg=="));
     }
 
     #[test]
@@ -626,7 +631,7 @@ mod tests {
         let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nproxy-authenticate: Basic realm=\"proxy\"\r\n\r\n";
         assert_eq!(
             find_proxy_authenticate(headers),
-            Some("Basic realm=\"proxy\"".to_string())
+            Some("Basic realm=\"proxy\"")
         );
     }
 
