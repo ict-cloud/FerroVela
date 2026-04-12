@@ -44,9 +44,10 @@ fn benchmark_connect_v2(c: &mut Criterion) {
                 domain: None,
                 workstation: None,
             }),
-            exceptions: Some(ExceptionsConfig {
-                hosts: vec!["localhost".to_string(), "*.internal".to_string()],
-            }),
+            exceptions: Some(ExceptionsConfig::new(vec![
+                "localhost".to_string(),
+                "*.internal".to_string(),
+            ])),
         });
         let pac = Arc::new(None);
 
