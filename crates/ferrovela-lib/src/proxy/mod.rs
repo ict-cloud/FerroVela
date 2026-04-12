@@ -510,8 +510,7 @@ impl Proxy {
                 if user.is_empty() {
                     return None;
                 }
-                let encoded =
-                    base64::prelude::BASE64_STANDARD.encode(format!("{}:{}", user, pass));
+                let encoded = base64::prelude::BASE64_STANDARD.encode(format!("{}:{}", user, pass));
                 Some(Arc::from(encoded.as_str()))
             });
 

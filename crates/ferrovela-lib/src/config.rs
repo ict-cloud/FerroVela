@@ -122,9 +122,9 @@ impl ExceptionsConfig {
         if self.exact.contains(host) {
             return true;
         }
-        self.suffixes.iter().any(|suffix| {
-            host.len() > suffix.len() && host.ends_with(suffix.as_str())
-        })
+        self.suffixes
+            .iter()
+            .any(|suffix| host.len() > suffix.len() && host.ends_with(suffix.as_str()))
     }
 }
 

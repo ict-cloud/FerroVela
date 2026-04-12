@@ -62,7 +62,8 @@ pub async fn read_http_headers(
     // heap allocation when the bytes are valid UTF-8 (which HTTP headers
     // always are).  The previous `from_utf8_lossy(&buf).into_owned()` was
     // borrowing `buf` and then cloning, wasting one full heap copy per call.
-    Ok(String::from_utf8(buf).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
+    Ok(String::from_utf8(buf)
+        .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
 }
 
 /// Extract the target `host:port` from a CONNECT request line, e.g.

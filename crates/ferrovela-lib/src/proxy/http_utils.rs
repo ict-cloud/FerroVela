@@ -71,10 +71,7 @@ mod tests {
             find_header_value(headers, "Proxy-Authenticate"),
             Some("Basic realm=\"proxy\"")
         );
-        assert_eq!(
-            find_header_value(headers, "connection"),
-            Some("keep-alive")
-        );
+        assert_eq!(find_header_value(headers, "connection"), Some("keep-alive"));
         assert_eq!(find_header_value(headers, "foo"), None);
     }
 }
