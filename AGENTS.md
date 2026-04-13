@@ -32,17 +32,18 @@ FerroVela is a Rust-based local proxy server designed to route HTTP/HTTPS traffi
 
 ## Architecture
 
-The application is built on **Hyper 1.0** and **Tokio** for high-performance asynchronous I/O.
+The application is built on **rama 0.2** and **Tokio** for high-performance asynchronous I/O. rama provides the TCP listener, HTTP/1.1 server, and a typed CONNECT upgrade pipeline.
 
 ### Core Components
 
 1.  **Proxy Server (`src/proxy/`)**:
-    -   Uses `hyper::server::conn::http1` to handle incoming connections.
-    -   **Modular Design**: Logic is split into `connect.rs` (HTTPS tunneling) and `nonconnect.rs` (standard HTTP proxying).
-    -   **HTTPS/Tunneling**: Implements the `CONNECT` method to create TCP tunnels to target servers or upstream proxies.
-    -   **Standard HTTP**: Implements standard HTTP forwarding (GET, POST, etc.) for non-SSL traffic.
-    -   **Upstream Chaining**: Can forward traffic to a parent proxy defined in `config.json` or returned by the PAC script.
-    -   **Authentication**: Supports **Basic**, **NTLM**, and **Kerberos** (Negotiate) authentication for upstream proxies.
+    -   `mod.rs`: Main proxy logic using rama's `TcpListener` → `HttpServer::auto` → `UpgradeLayer` stack.
+        -   **`ConnectResponder`**: Handles `CONNECT` requests before the TCP upgrade — resolves the upstream proxy via PAC/config, applies the SSRF guard, stores the routing decision in the rama `Context`, then returns `200`. Returns an error response (403/400) to abort the upgrade if blocked.
+        -   **`ConnectHandler`**: Runs on the raw upgraded socket — reads `ConnectRouting` from the `Context` and either routes through the authenticated upstream proxy (`perform_authenticated_connect`), the unauthenticated upstream proxy, or connects directly.
+        -   **`plain_http_handler`**: Handles all non-CONNECT requests — magic IPC endpoint, plain HTTP forwarding to upstream, and direct plain HTTP.
+    -   `auth_tunnel.rs`: Low-level authenticated CONNECT handshake (`perform_authenticated_connect`). Owns the multi-round 407 loop over a **single reused TCP connection** (required for stateful NTLM/Kerberos).
+    -   `ssrf.rs`: Private-IP detection and SSRF guard.
+    -   `http_utils.rs`: HTTP parsing helpers.
 
 2.  **Authentication (`src/auth/`)**:
     -   **Architecture**: Uses an `AuthSession` trait to handle multi-step authentication handshakes (essential for NTLM and Negotiate).
@@ -50,13 +51,13 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
         -   `UpstreamAuthenticator`: Factory trait to create sessions.
         -   `AuthSession`: Stateful session processing server challenges (407 responses).
         -   `BasicAuthenticator`: Stateless, sends credentials every time.
-        -   `NtlmAuthenticator`: Implements NTLMv2 handshake (Type 1 -> Challenge -> Type 3) using `ntlmclient`.
+        -   `NtlmAuthenticator`: Implements NTLMv2 handshake (Type 1 → Challenge → Type 3) using `ntlmclient`. All three rounds share one TCP connection.
         -   `KerberosAuthenticator`: Implements SPNEGO/Kerberos handshake using `libgssapi`.
 
 3.  **PAC Engine (`src/pac.rs`)**:
-    -   Uses **Boa (`boa_engine`)**, a pure Rust JavaScript engine, to execute PAC files.
+    -   Uses **rquickjs** (`rquickjs`), a QuickJS-based JavaScript engine, to execute PAC files.
     -   **PAC Fetch**: Remote PAC files (HTTP URLs) are always fetched using a DIRECT connection (`reqwest` with `.no_proxy()`), avoiding circular proxy dependencies.
-    -   **Threading Model**: Since `boa_engine::Context` is `!Send`, the JS execution logic runs in **dedicated OS threads** (`std::thread::Builder`) with an 8 MB stack size to accommodate Boa's deep recursion on complex PAC scripts.
+    -   **Threading Model**: Since `rquickjs::Context` is `!Send`, the JS execution logic runs in **dedicated OS threads** (`std::thread::Builder`) with an 8 MB stack size.
     -   **Communication**: The main Tokio runtime communicates with the PAC threads via `tokio::sync::mpsc` channels for requests and `tokio::sync::oneshot` for responses.
     -   **Implemented JS Functions** (full PAC spec coverage):
         -   `isPlainHostName(host)`: Returns true if hostname has no dots.
@@ -74,19 +75,17 @@ The application is built on **Hyper 1.0** and **Tokio** for high-performance asy
         -   `timeRange(...)`: *Stub* (returns true).
 
 4.  **Configuration (`src/config.rs`)**:
-    -   Managed via `config.json`.
-    -   Parsed using `musli` (JSON format).
+    -   Stored in macOS preferences under the `com.ictcloud.ferrovela` domain via `core-foundation` (`CFPreferences`).
     -   Supports defining:
         -   Local listening port.
         -   PAC file location (local path or HTTP URL).
-        -   Upstream proxy details (URL, Auth type, Credentials, Domain, Workstation).
-        -   Exception rules (Hosts/Domains to bypass proxy).
+        -   Upstream proxy details (URL, auth type, credentials, domain, workstation).
+        -   Exception rules (hosts/domains to bypass proxy).
 
 5.  **User Interface (`src/ui.rs`)**:
-    -   Built using **Iced** (`iced`) for a cross-platform GUI.
-    -   Provides a form-based editor for `config.json`.
-    -   Launched via the `--ui` command-line flag.
-    -   Synchronous save to disk using `musli` (JSON format).
+    -   Built using **Iced** (`iced`) for a macOS GUI.
+    -   Provides a tabbed configuration editor (Proxy, Upstream, Exceptions).
+    -   Reads and writes settings via `CFPreferences`; signals the running proxy daemon via a magic HTTP request.
 
 ## Current Status & Capabilities
 
@@ -138,10 +137,11 @@ cargo build --release
 
 ## Developer Notes
 
--   **Boa & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local Boa engine. Any new PAC functions must be registered inside the spawned thread closure in `src/pac.rs`. Worker threads use `thread::Builder` with 8 MB stack size.
+-   **rquickjs & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local QuickJS runtime. Any new PAC functions must be registered inside the spawned thread closure in `src/pac.rs`. Worker threads use `thread::Builder` with 8 MB stack size.
 -   **PAC Fetch**: Remote PAC files are fetched with `reqwest::Client::builder().no_proxy()` to ensure DIRECT connections.
+-   **rama Context extensions**: `ConnectRouting` is inserted into the rama `Context` by `ConnectResponder` and consumed by `ConnectHandler`. This avoids repeating PAC evaluation across the upgrade boundary.
+-   **NTLM connection reuse**: All three rounds of an NTLM handshake (Negotiate → Challenge → Authenticate) must share a single TCP connection. `perform_authenticated_connect` in `auth_tunnel.rs` enforces this.
 -   **Error Handling**: The application uses `anyhow` for error propagation and `log` for observability.
--   **Security**: Credentials in `config.json` are read as plain text.
 
 ## Authentication Implementation
 
@@ -155,8 +155,8 @@ cargo build --release
 ### NTLM
 - Implemented using `ntlmclient` crate.
 - Supports NTLMv2.
-- **Handshake**: Fully implemented (Type 1 -> Type 2 -> Type 3).
-- **HTTP Handling**: Buffers request bodies to allow replaying requests during the handshake loop.
+- **Handshake**: Fully implemented (Type 1 → Type 2 → Type 3) inside `perform_authenticated_connect`.
+- **Connection reuse**: All three rounds reuse a single TCP connection — the server's Type 2 challenge is tied to the session, so opening a new connection would break the handshake.
 
 ## Future Work
 1.  Implement actual DNS resolution for `dnsResolve` in PAC (currently returns host as-is).

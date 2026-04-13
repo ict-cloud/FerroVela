@@ -28,12 +28,6 @@ fn config_allow_private(allow: bool) -> Arc<Config> {
 /// Spin up the auth tunnel handler for a single connection, send `request`,
 /// and return the full response bytes.
 async fn tunnel_response(request: &[u8], allow_private_ips: bool) -> Vec<u8> {
-    // Internal g3proxy port — bind a listener so the address is valid, but the
-    // SSRF check fires before any connection reaches it.
-    let g3_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let internal_port = g3_listener.local_addr().unwrap().port();
-
-    // Listener that plays the role of the proxy client.
     let outer = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let outer_addr = outer.local_addr().unwrap();
 
@@ -45,21 +39,8 @@ async fn tunnel_response(request: &[u8], allow_private_ips: bool) -> Vec<u8> {
     let pac_c = Arc::clone(&pac);
     tokio::spawn(async move {
         let (conn, _) = outer.accept().await.unwrap();
-        // No authenticator → direct-connect path, which is where the SSRF guard lives.
-        handle_authenticated_tunnel(
-            conn,
-            internal_port,
-            {
-                // We need *something* for the authenticator parameter but the direct
-                // CONNECT path doesn't use it; use a mock.
-                use crate::auth::mock_kerberos::MockKerberosAuthenticator;
-                use crate::auth::UpstreamAuthenticator;
-                Arc::from(Box::new(MockKerberosAuthenticator) as Box<dyn UpstreamAuthenticator>)
-            },
-            config_c,
-            pac_c,
-        )
-        .await;
+        // No authenticator and no upstream → direct-connect path where SSRF guard lives.
+        handle_authenticated_tunnel(conn, None, config_c, pac_c).await;
     });
 
     let mut client = TcpStream::connect(outer_addr).await.unwrap();

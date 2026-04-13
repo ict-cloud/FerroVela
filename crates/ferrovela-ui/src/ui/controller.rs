@@ -342,7 +342,7 @@ impl ConfigEditor {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
-            Some(ExceptionsConfig { hosts })
+            Some(ExceptionsConfig::new(hosts))
         };
 
         Config {
