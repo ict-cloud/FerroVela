@@ -1,6 +1,28 @@
 # Changelog
 
-## [0.4.3] - Unreleased
+## [0.4.4] - unreleased
+
+### Changed
+- **Proxy engine replaced: g3proxy → rama.** The HTTP server and CONNECT tunneling layer now use [rama 0.2](https://github.com/plabayo/rama) instead of g3proxy/g3-daemon. Traffic flows through rama's `TcpListener` → `HttpServer::auto` → `UpgradeLayer` stack. A custom `ConnectResponder` performs the SSRF check and PAC resolution before the TCP upgrade commits, and `ConnectHandler` drives the authenticated or direct tunnel afterwards. All 104 unit tests pass unchanged.
+- **Log timestamps.** Each log line now includes an ISO 8601 UTC timestamp (e.g. `2026-04-09T10:23:45Z`) prepended before the log level, making it straightforward to correlate log entries with events.
+
+### Performance
+- **Release profile tuned for speed.** `opt-level` changed from `"s"` (size) to `3` (speed). The previous setting traded request latency for a smaller binary — a poor trade for a daemon that stays resident. With `opt-level = 3`, the compiler enables autovectorization and more aggressive inlining, which is especially valuable for the SIMD-accelerated byte-scan paths below.
+- **Zero-copy header decode.** `read_http_headers` previously called `String::from_utf8_lossy(&buf).into_owned()` — borrowing the buffer then cloning it, always allocating a full copy of the header bytes regardless of whether they were valid UTF-8. Changed to `String::from_utf8(buf)`, which transfers ownership of the `Vec<u8>` into a `String` without any heap allocation on the (always-true) valid-UTF-8 path. Eliminates one header-sized heap allocation per CONNECT round-trip (typically 200–2 000 bytes, up to four times per authenticated tunnel).
+- **Zero-alloc header search.** `find_proxy_authenticate` changed to return `Option<&str>` (borrowed from the header buffer) instead of `Option<String>`, removing the per-challenge heap allocation. Conversion to owned only happens once, at the one call-site where ownership is required.
+- **`find_header_value` returns `&str`.** Return type changed from `Option<String>` to `Option<&'a str>`, eliminating the per-match heap allocation. All callers updated.
+- **SIMD byte search.** `find_subsequence` replaced its `windows().position()` byte-at-a-time loop with `memchr::memmem::find` (already a dependency), which uses SIMD instructions where available. `#[inline]` added to all three `http_utils` functions to guarantee cross-module inlining.
+- **Precomputed Basic auth header.** `BasicAuthenticator` now computes `Base64("user:pass")` once at construction and stores it as `Arc<str>`. The plain-HTTP path previously re-ran the base64 encoder on every request; `create_session()` previously cloned two `String`s. Both are now a single atomic reference-count increment.
+- **`Arc<str>` for NTLM credentials.** `NtlmAuthenticator` and `NtlmSession` store `username`, `password`, `domain`, and `workstation` as `Arc<str>` instead of `String`. `create_session()` is now four atomic increments rather than four heap allocations.
+- **Unified, zero-allocation HTTP request serializer.** The two near-identical `serialize_http_request` / `serialize_http_request_direct` functions were merged into a single `write_http_request` that writes directly into a caller-supplied `Vec<u8>` via `extend_from_slice`. The previous implementation built a `String` and called `format!("{}: {}\r\n", name, v)` per header — one throwaway heap allocation per header line (10–20 per request). The new path copies bytes directly from rama's owned header map: zero intermediate allocations per header.
+- **Precomputed `basic_auth_b64` on `ProxyState`.** The Base64 credential string is computed once in `Proxy::new()` and stored on the shared state as `Option<Arc<str>>`. `forward_plain_http_to_upstream` receives it as `Option<&str>` and no longer reads `config.upstream` or calls the base64 encoder at request time.
+- **Eliminated unnecessary `Uri::clone()`.** `plain_http_handler` previously cloned the entire request URI before extracting host and port. It now reads the URI components directly from `req.uri()` and converts the host to an owned `String` to release the borrow, avoiding the full clone.
+- **Bounded response buffer.** Both plain-HTTP forward paths now allocate `Vec::with_capacity(8 * 1024)` for reading the upstream response instead of `Vec::new()` (capacity 0). The initial allocation now covers most HTTP API responses without triggering the geometric-growth realloc cascade.
+- **In-place body extraction in `parse_raw_response`.** The previous implementation copied body bytes into a new `Vec` via `buf[body_start..].to_vec()`. Now `buf.drain(..body_start)` removes the header bytes in-place (a `memmove` within the existing allocation), and the resulting `buf` — containing only body bytes — is passed directly to `Body::from`. Eliminates one heap allocation whose size equals the response body.
+- **Compiled exception-list lookup.** `ExceptionsConfig::new` pre-partitions the host list into a `HashSet<String>` (exact patterns) and a `Vec<String>` (wildcard suffixes). `matches()` now resolves exact hosts in O(1) instead of O(n·m). Suffix patterns remain O(n) but against a smaller list. The change is invisible to all callers; `hosts` stays public for serialization.
+
+
+## [0.4.3] - 9. Apr 2026
 
 ### Added
 - **Dark mode support.** The UI now follows the macOS system appearance. The theme switches between Light and Dark automatically when the system preference changes (polled every three seconds).

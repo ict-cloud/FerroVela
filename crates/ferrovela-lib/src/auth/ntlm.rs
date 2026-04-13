@@ -4,23 +4,28 @@ use log::debug;
 use ntlmclient::{
     get_ntlm_time, respond_challenge_ntlm_v2, Credentials, Flags, Message, NegotiateMessage,
 };
+use std::sync::Arc;
 
 use super::{AuthSession, UpstreamAuthenticator};
 
+/// Authenticator that holds NTLM credentials as `Arc<str>`.
+///
+/// `create_session()` clones four `Arc<str>` values (atomic ref-count
+/// increments) rather than heap-allocating four new `String`s.
 pub struct NtlmAuthenticator {
-    username: String,
-    password: String,
-    domain: String,
-    workstation: String,
+    username: Arc<str>,
+    password: Arc<str>,
+    domain: Arc<str>,
+    workstation: Arc<str>,
 }
 
 impl NtlmAuthenticator {
     pub fn new(username: String, password: String, domain: String, workstation: String) -> Self {
         Self {
-            username,
-            password,
-            domain,
-            workstation,
+            username: username.into(),
+            password: password.into(),
+            domain: domain.into(),
+            workstation: workstation.into(),
         }
     }
 }
@@ -28,10 +33,10 @@ impl NtlmAuthenticator {
 impl UpstreamAuthenticator for NtlmAuthenticator {
     fn create_session(&self) -> Box<dyn AuthSession> {
         Box::new(NtlmSession {
-            username: self.username.clone(),
-            password: self.password.clone(),
-            domain: self.domain.clone(),
-            workstation: self.workstation.clone(),
+            username: Arc::clone(&self.username),
+            password: Arc::clone(&self.password),
+            domain: Arc::clone(&self.domain),
+            workstation: Arc::clone(&self.workstation),
             state: NtlmState::Initial,
         })
     }
@@ -44,10 +49,10 @@ enum NtlmState {
 }
 
 struct NtlmSession {
-    username: String,
-    password: String,
-    domain: String,
-    workstation: String,
+    username: Arc<str>,
+    password: Arc<str>,
+    domain: Arc<str>,
+    workstation: Arc<str>,
     state: NtlmState,
 }
 
@@ -63,8 +68,10 @@ impl AuthSession for NtlmSession {
 
                 let msg = Message::Negotiate(NegotiateMessage {
                     flags,
-                    supplied_domain: self.domain.clone(),
-                    supplied_workstation: self.workstation.clone(),
+                    // ntlmclient expects owned Strings; convert from Arc<str> here
+                    // (one allocation per negotiation, unavoidable by the crate API).
+                    supplied_domain: self.domain.as_ref().to_owned(),
+                    supplied_workstation: self.workstation.as_ref().to_owned(),
                     os_version: Default::default(),
                 });
 
@@ -79,8 +86,6 @@ impl AuthSession for NtlmSession {
             NtlmState::Challenge => {
                 let challenge_str = challenge.ok_or_else(|| anyhow!("NTLM expected challenge"))?;
                 if !challenge_str.starts_with("NTLM ") {
-                    // It might be just "NTLM" if something is wrong or different stage?
-                    // But here we expect Type 2 message.
                     return Err(anyhow!("Invalid NTLM challenge header: {}", challenge_str));
                 }
                 let b64 = challenge_str[5..].trim();
@@ -101,7 +106,6 @@ impl AuthSession for NtlmSession {
 
                 debug!("NTLM: Generating Type 3 (Authenticate) message");
 
-                // Collect target info
                 let target_info_bytes: Vec<u8> = challenge_msg
                     .target_information
                     .iter()
@@ -109,9 +113,9 @@ impl AuthSession for NtlmSession {
                     .collect();
 
                 let creds = Credentials {
-                    username: self.username.clone(),
-                    password: self.password.clone(),
-                    domain: self.domain.clone(),
+                    username: self.username.as_ref().to_owned(),
+                    password: self.password.as_ref().to_owned(),
+                    domain: self.domain.as_ref().to_owned(),
                 };
 
                 let response = respond_challenge_ntlm_v2(

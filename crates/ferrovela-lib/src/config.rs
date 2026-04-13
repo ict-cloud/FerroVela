@@ -81,31 +81,50 @@ impl Default for UpstreamConfig {
     }
 }
 
+/// Exception-list configuration, with pre-compiled lookup structures.
+///
+/// On construction the `hosts` list is partitioned into:
+/// - `exact`    — `HashSet<String>` for O(1) exact-match lookups.
+/// - `suffixes` — `Vec<String>` of `".example.com"` strings for wildcard
+///   patterns like `"*.example.com"` (suffix check, O(n)).
+///
+/// Typical corporate configs have ≤ 50 exceptions; even in the worst case
+/// exact matches (the common hot path) are now O(1) instead of O(n·m).
 #[derive(Debug, Clone, Default)]
 pub struct ExceptionsConfig {
     pub hosts: Vec<String>,
+    exact: std::collections::HashSet<String>,
+    suffixes: Vec<String>,
 }
 
 impl ExceptionsConfig {
-    pub fn matches(&self, host: &str) -> bool {
-        self.hosts
-            .iter()
-            .any(|pattern| Self::host_matches_pattern(pattern, host))
-    }
-
-    fn host_matches_pattern(pattern: &str, host: &str) -> bool {
-        if pattern == host {
-            return true;
-        }
-        if pattern.starts_with("*.") {
-            let suffix = &pattern[1..]; // e.g. ".example.com"
-                                        // The host must end with the suffix AND have at least one character
-                                        // before it (so ".example.com" does not match "*.example.com").
-            if host.len() > suffix.len() && host.ends_with(suffix) {
-                return true;
+    /// Build an `ExceptionsConfig` from a list of host patterns, pre-compiling
+    /// them into the fast lookup structures.
+    pub fn new(hosts: Vec<String>) -> Self {
+        let mut exact = std::collections::HashSet::with_capacity(hosts.len());
+        let mut suffixes = Vec::new();
+        for h in &hosts {
+            if h.starts_with("*.") {
+                // "*.example.com" → ".example.com"
+                suffixes.push(h[1..].to_owned());
+            } else {
+                exact.insert(h.clone());
             }
         }
-        false
+        Self {
+            hosts,
+            exact,
+            suffixes,
+        }
+    }
+
+    pub fn matches(&self, host: &str) -> bool {
+        if self.exact.contains(host) {
+            return true;
+        }
+        self.suffixes
+            .iter()
+            .any(|suffix| host.len() > suffix.len() && host.ends_with(suffix.as_str()))
     }
 }
 
@@ -324,7 +343,7 @@ fn load_exceptions_config() -> Option<ExceptionsConfig> {
     if hosts.is_empty() {
         return None;
     }
-    Some(ExceptionsConfig { hosts })
+    Some(ExceptionsConfig::new(hosts))
 }
 
 pub fn save_config(config: &Config) -> Result<()> {
@@ -370,9 +389,7 @@ mod tests {
 
     #[test]
     fn test_exceptions_exact_match() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec!["example.com".to_string()],
-        };
+        let exceptions = ExceptionsConfig::new(vec!["example.com".to_string()]);
         assert!(exceptions.matches("example.com"));
         assert!(!exceptions.matches("sub.example.com"));
         assert!(!exceptions.matches("other.com"));
@@ -380,9 +397,7 @@ mod tests {
 
     #[test]
     fn test_exceptions_wildcard_match() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec!["*.example.com".to_string()],
-        };
+        let exceptions = ExceptionsConfig::new(vec!["*.example.com".to_string()]);
         assert!(exceptions.matches("sub.example.com"));
         assert!(exceptions.matches("deep.sub.example.com"));
         assert!(!exceptions.matches("example.com"));
@@ -394,9 +409,8 @@ mod tests {
 
     #[test]
     fn test_exceptions_multiple_patterns() {
-        let exceptions = ExceptionsConfig {
-            hosts: vec!["exact.com".to_string(), "*.wild.com".to_string()],
-        };
+        let exceptions =
+            ExceptionsConfig::new(vec!["exact.com".to_string(), "*.wild.com".to_string()]);
         assert!(exceptions.matches("exact.com"));
         assert!(!exceptions.matches("sub.exact.com"));
         assert!(exceptions.matches("sub.wild.com"));
@@ -406,7 +420,7 @@ mod tests {
 
     #[test]
     fn test_exceptions_empty() {
-        let exceptions = ExceptionsConfig { hosts: vec![] };
+        let exceptions = ExceptionsConfig::new(vec![]);
         assert!(!exceptions.matches("example.com"));
     }
 
@@ -433,9 +447,10 @@ mod tests {
                 workstation: Some("TESTWS".to_string()),
                 proxy_url: Some("http://proxy:8080".to_string()),
             }),
-            exceptions: Some(ExceptionsConfig {
-                hosts: vec!["localhost".to_string(), "*.internal".to_string()],
-            }),
+            exceptions: Some(ExceptionsConfig::new(vec![
+                "localhost".to_string(),
+                "*.internal".to_string(),
+            ])),
         };
 
         save_config(&config).unwrap();
