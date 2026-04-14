@@ -2,6 +2,14 @@
 name = "ferrovela-ui"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
+
 
 [package.metadata.bundle]
 identifier = "com.ictcloud.ferrovela"

@@ -2,6 +2,13 @@
 name = "ferrovela-lib"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+categories.workspace = true
+keywords.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
