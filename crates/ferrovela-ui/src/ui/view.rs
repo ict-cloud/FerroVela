@@ -264,19 +264,15 @@ impl ConfigEditor {
         };
 
         let lock_row = button(
-            row![
-                text(lock_icon),
-                text(lock_label).size(13),
-            ]
-            .spacing(6)
-            .align_y(Alignment::Center),
+            row![text(lock_icon), text(lock_label).size(13),]
+                .spacing(6)
+                .align_y(Alignment::Center),
         )
         .on_press(Message::AdvancedUnlockRequested)
         .style(iced::widget::button::secondary);
 
         // Allow-private-IPs checkbox — editable only when unlocked.
-        let mut allow_private_ips_checkbox =
-            iced::widget::Checkbox::new(self.allow_private_ips);
+        let mut allow_private_ips_checkbox = iced::widget::Checkbox::new(self.allow_private_ips);
         if self.advanced_unlocked {
             allow_private_ips_checkbox =
                 allow_private_ips_checkbox.on_toggle(Message::AllowPrivateIpsToggled);
