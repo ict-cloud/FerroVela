@@ -24,11 +24,12 @@ To launch the configuration editor:
 ./target/release/ferrovela
 ```
 
-The UI provides three configuration tabs — **Proxy**, **Upstream**, and **Exceptions** — with the following behaviours:
+The UI provides four configuration tabs — **Proxy**, **Upstream**, **Exceptions**, and **Advanced** — with the following behaviours:
 
 - **Save feedback**: every change is persisted immediately; a green confirmation or red error message appears below the service toggle and auto-dismisses after a few seconds.
 - **Progressive disclosure**: the Upstream tab shows only the fields relevant to the chosen authentication type (e.g. Domain and Workstation are hidden unless NTLM is selected).
 - **Restart banner**: if the proxy service is running when settings are changed, a warning banner appears with a *Restart Now* button to apply the new configuration without manually toggling the service off and on.
+- **Advanced tab — admin-locked controls**: the *Advanced* tab exposes the `Allow private IPs` and `Listen IP` settings. Both are disabled by default; clicking the lock icon triggers the macOS admin-password / Touch ID prompt (Authorization Services). Authenticating unlocks the controls until the user leaves the tab or relocks manually. The `Listen IP` field is only editable when `Allow private IPs` is also enabled, since exposing the proxy beyond loopback is only useful when internal targets are reachable.
 
 ### Authentication Types
 
@@ -100,7 +101,8 @@ Available preference keys:
 |---|---|---|
 | `proxy_port` | Integer | Local proxy port (default: 3128) |
 | `proxy_pac_file` | String | URL or path to PAC file |
-| `proxy_allow_private_ips` | Boolean | Allow proxying to private IPs |
+| `proxy_allow_private_ips` | Boolean | Allow proxying to private IPs (relaxes SSRF guard) |
+| `proxy_listen_ip` | String | IP address the proxy binds to (default: `127.0.0.1`). Only effective when `proxy_allow_private_ips` is `true`; overridden to loopback otherwise. Use `0.0.0.0` for LAN-wide access. |
 | `upstream_auth_type` | String | `none`, `basic`, `ntlm`, or `kerberos` |
 | `upstream_username` | String | Upstream proxy username |
 | `upstream_password` | String | Upstream proxy password (see credential security note below) |

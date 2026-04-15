@@ -26,6 +26,7 @@ impl ConfigEditor {
             sidebar_button("Proxy", Tab::Proxy, self.active_tab),
             sidebar_button("Upstream", Tab::Upstream, self.active_tab),
             sidebar_button("Exceptions", Tab::Exceptions, self.active_tab),
+            sidebar_button("Advanced", Tab::Advanced, self.active_tab),
             Space::new().height(Length::Fill),
             rule::horizontal(1),
             Space::new().height(5),
@@ -40,6 +41,7 @@ impl ConfigEditor {
             Tab::Proxy => self.view_proxy_config(),
             Tab::Upstream => self.view_upstream_config(),
             Tab::Exceptions => self.view_exceptions_config(),
+            Tab::Advanced => self.view_advanced_config(),
         };
 
         let (dot_color, status_label) = match self.service_status {
@@ -251,6 +253,85 @@ impl ConfigEditor {
                 .spacing(5)
             )
         ]
+        .into()
+    }
+
+    fn view_advanced_config(&self) -> Element<'_, Message> {
+        let (lock_icon, lock_label) = if self.advanced_unlocked {
+            ("🔓", "Click to lock")
+        } else {
+            ("🔒", "Click the lock to make changes")
+        };
+
+        let lock_row = button(
+            row![
+                text(lock_icon),
+                text(lock_label).size(13),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::AdvancedUnlockRequested)
+        .style(iced::widget::button::secondary);
+
+        // Allow-private-IPs checkbox — editable only when unlocked.
+        let mut allow_private_ips_checkbox =
+            iced::widget::Checkbox::new(self.allow_private_ips);
+        if self.advanced_unlocked {
+            allow_private_ips_checkbox =
+                allow_private_ips_checkbox.on_toggle(Message::AllowPrivateIpsToggled);
+        }
+
+        // Listen IP text input — editable only when unlocked AND allow_private_ips is on.
+        let listen_ip_editable = self.advanced_unlocked && self.allow_private_ips;
+        let mut listen_ip_input = text_input("127.0.0.1", &self.proxy_listen_ip);
+        if listen_ip_editable {
+            listen_ip_input = listen_ip_input.on_input(Message::ProxyListenIpChanged);
+        }
+
+        let mut fields = column![field_row(
+            "Allow private IPs (bypass SSRF guard):",
+            allow_private_ips_checkbox
+        )]
+        .spacing(10);
+
+        fields = fields.push(validated_field_row(
+            "Listen IP:",
+            listen_ip_input,
+            self.proxy_listen_ip_error.as_deref(),
+        ));
+
+        // Show a hint explaining why the Listen IP field is locked when
+        // allow_private_ips is off but the tab is unlocked.
+        if self.advanced_unlocked && !self.allow_private_ips {
+            fields = fields.push(
+                text("Listen IP is ignored unless 'Allow private IPs' is enabled. The proxy will bind to 127.0.0.1.")
+                    .size(12)
+                    .color(Color::from_rgb(0.55, 0.55, 0.55)),
+            );
+        }
+
+        let warning = container(
+            text(
+                "Warning: enabling 'Allow private IPs' relaxes the SSRF guard. \
+                 Setting a non-loopback Listen IP exposes the proxy to the network.",
+            )
+            .size(13),
+        )
+        .padding(10)
+        .style(warning_box)
+        .width(Length::Fill);
+
+        column![
+            text("Advanced Settings").size(24),
+            Space::new().height(10),
+            lock_row,
+            Space::new().height(10),
+            group_box(fields),
+            Space::new().height(10),
+            warning,
+        ]
+        .spacing(10)
         .into()
     }
 }

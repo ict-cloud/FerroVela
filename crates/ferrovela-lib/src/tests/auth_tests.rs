@@ -81,7 +81,7 @@ fn test_ntlm_initialization() {
     let b64 = header.trim_start_matches("NTLM ");
     let bytes = base64::prelude::BASE64_STANDARD.decode(b64).unwrap();
     // Verify minimal length or content?
-    assert!(bytes.len() > 0);
+    assert!(!bytes.is_empty());
 }
 
 #[test]

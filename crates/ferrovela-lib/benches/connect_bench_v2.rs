@@ -15,6 +15,7 @@ fn benchmark_connect_v2(c: &mut Criterion) {
                 port: 3128,
                 pac_file: None,
                 allow_private_ips: false,
+                listen_ip: "127.0.0.1".to_string(),
             },
             upstream: None,
             exceptions: None,
@@ -34,6 +35,7 @@ fn benchmark_connect_v2(c: &mut Criterion) {
                 port: 3128,
                 pac_file: None,
                 allow_private_ips: false,
+                listen_ip: "127.0.0.1".to_string(),
             },
             upstream: Some(UpstreamConfig {
                 proxy_url: Some("10.0.0.1:3128".to_string()),
@@ -64,6 +66,7 @@ fn benchmark_connect_v2(c: &mut Criterion) {
                 port: 3128,
                 pac_file: None,
                 allow_private_ips: false,
+                listen_ip: "127.0.0.1".to_string(),
             },
             upstream: Some(UpstreamConfig {
                 proxy_url: Some("10.0.0.1:3128".to_string()),

@@ -77,15 +77,18 @@ The application is built on **rama 0.2** and **Tokio** for high-performance asyn
 4.  **Configuration (`src/config.rs`)**:
     -   Stored in macOS preferences under the `com.ictcloud.ferrovela` domain via `core-foundation` (`CFPreferences`).
     -   Supports defining:
-        -   Local listening port.
+        -   Local listening port (`proxy_port`, default 3128).
+        -   Bind IP address (`proxy_listen_ip`, default `127.0.0.1`). Exposed via `ProxyConfig::effective_listen_ip()`, which enforces the coupling with `allow_private_ips`: a non-loopback IP is only honoured when `allow_private_ips` is `true`, regardless of the stored value.
         -   PAC file location (local path or HTTP URL).
+        -   Whether to allow proxying to private/RFC-1918 IP ranges (`proxy_allow_private_ips`).
         -   Upstream proxy details (URL, auth type, credentials, domain, workstation).
         -   Exception rules (hosts/domains to bypass proxy).
 
-5.  **User Interface (`src/ui.rs`)**:
+5.  **User Interface (`crates/ferrovela-ui/src/ui/`)**:
     -   Built using **Iced** (`iced`) for a macOS GUI.
-    -   Provides a tabbed configuration editor (Proxy, Upstream, Exceptions).
+    -   Provides a tabbed configuration editor with four tabs: **Proxy**, **Upstream**, **Exceptions**, and **Advanced**.
     -   Reads and writes settings via `CFPreferences`; signals the running proxy daemon via a magic HTTP request.
+    -   **Advanced tab** (`ui/auth.rs`, `ui/view.rs`): Exposes `Allow private IPs` and `Listen IP`. Both controls are locked by default; clicking the lock triggers the macOS Authorization Services sheet (`system.preferences` right) on a background thread via `tokio::task::spawn_blocking` → `iced::Task::perform`. The tab relocks automatically on navigation away. The `Listen IP` field is only editable when `Allow private IPs` is also enabled, mirroring the library-level coupling.
 
 ## Current Status & Capabilities
 

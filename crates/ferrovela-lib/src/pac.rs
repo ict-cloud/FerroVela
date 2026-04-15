@@ -442,10 +442,10 @@ mod tests {
         let (_rt, ctx) = pac_ctx();
         ctx.with(|ctx| {
             let res1: bool = ctx.eval("isPlainHostName('example.com')").unwrap();
-            assert_eq!(res1, false);
+            assert!(!res1);
 
             let res2: bool = ctx.eval("isPlainHostName('localhost')").unwrap();
-            assert_eq!(res2, true);
+            assert!(res2);
         });
     }
 
