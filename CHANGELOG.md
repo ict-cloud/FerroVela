@@ -2,6 +2,9 @@
 
 ## [0.4.5] - unreleased
 
+### Fixed
+- **Service status correctly reflects post-reboot state.** The service toggle previously showed "Running" after a system reboot even though the proxy was not executing. macOS automatically bootstraps every plist in `~/Library/LaunchAgents/` at login, so `launchctl print` would exit 0 (the old check) while `RunAtLoad=false` left the proxy unspawned. `is_running()` now delegates to `pid()`, which requires a live PID (`pid = N`, N > 0) in the launchd service info — accurately distinguishing "service definition registered" from "proxy is actually running".
+
 ### Added
 - **Configurable proxy listen IP.** The local proxy's bind address was previously hard-coded to `127.0.0.1`. A new `proxy_listen_ip` preference key (default `127.0.0.1`) lets users expose the proxy on a specific interface or on all interfaces (`0.0.0.0`) for LAN-wide access. The setting is enforced in the library via `ProxyConfig::effective_listen_ip()`: a non-loopback IP is only honoured when `proxy_allow_private_ips` is also enabled, closing the `defaults write` backdoor. A `WARN`-level log line is emitted at startup when the configured IP is silently overridden.
 - **Advanced settings tab.** A new **Advanced** tab in the configuration UI surfaces the previously dormant `Allow private IPs` toggle and the new `Listen IP` field. Both controls are locked by default and require an explicit admin-authenticated unlock — mirroring the macOS System Settings "click the lock to make changes" pattern (Authorization Services, `system.preferences` right). Clicking the lock a second time relocks immediately without re-prompting. The tab relocks automatically when the user navigates away.
