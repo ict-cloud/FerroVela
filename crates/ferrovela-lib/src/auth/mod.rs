@@ -25,7 +25,7 @@ pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamA
     let mut password = config.password.clone();
     if config.use_keyring && password.is_none() {
         if let Some(username) = &config.username {
-            if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
+            if let Ok(entry) = keyring_core::Entry::new("ferrovela", username) {
                 if let Ok(pw) = entry.get_password() {
                     password = Some(pw);
                 }

@@ -434,7 +434,7 @@ impl ConfigEditor {
             if password.is_empty() {
                 return;
             }
-            match keyring::Entry::new("ferrovela", username) {
+            match keyring_core::Entry::new("ferrovela", username) {
                 Ok(entry) => {
                     if let Err(e) = entry.set_password(password) {
                         error!("Failed to save password to keyring: {}", e);
@@ -444,7 +444,7 @@ impl ConfigEditor {
                 }
                 Err(e) => error!("Failed to create keyring entry: {}", e),
             }
-        } else if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
+        } else if let Ok(entry) = keyring_core::Entry::new("ferrovela", username) {
             let _ = entry.delete_credential();
         }
     }

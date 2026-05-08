@@ -2,6 +2,9 @@
 
 ## [0.4.5] - unreleased
 
+### Changed
+- **Keyring updated to 4.0.** `keyring` 4.0 split `Entry` into a separate `keyring-core` crate and requires an explicit credential store to be initialised at startup. Both binaries now call `keyring::use_native_store()` on launch; all `keyring::Entry` references updated to `keyring_core::Entry`.
+
 ### Fixed
 - **Service status correctly reflects post-reboot state.** The service toggle previously showed "Running" after a system reboot even though the proxy was not executing. macOS automatically bootstraps every plist in `~/Library/LaunchAgents/` at login, so `launchctl print` would exit 0 (the old check) while `RunAtLoad=false` left the proxy unspawned. `is_running()` now delegates to `pid()`, which requires a live PID (`pid = N`, N > 0) in the launchd service info — accurately distinguishing "service definition registered" from "proxy is actually running".
 
