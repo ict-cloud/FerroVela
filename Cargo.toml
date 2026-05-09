@@ -15,7 +15,7 @@ repository = "https://github.com/ict-cloud/FerroVela"
 homepage = "https://github.com/ict-cloud/FerroVela"
 categories = ["proxy"]
 keywords = ["proxy", "tool", "developer"]
-rust-version = "1.93"
+rust-version = "1.95"
 
 
 [workspace.dependencies]

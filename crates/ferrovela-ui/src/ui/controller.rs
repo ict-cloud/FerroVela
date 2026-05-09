@@ -287,18 +287,14 @@ impl ConfigEditor {
                     return window::gain_focus(id);
                 }
             }
-            Message::OpenLogsAt(pos) => {
-                if self.log_window_id.is_none() {
-                    return self.open_log_window(pos);
-                }
+            Message::OpenLogsAt(pos) if self.log_window_id.is_none() => {
+                return self.open_log_window(pos);
             }
-            Message::Tick => {
-                if self.show_logs || self.log_window_id.is_some() {
-                    self.load_logs();
-                    return iced::widget::operation::snap_to_end(iced::widget::Id::new(
-                        "ferrovela_log_scroll",
-                    ));
-                }
+            Message::Tick if (self.show_logs || self.log_window_id.is_some()) => {
+                self.load_logs();
+                return iced::widget::operation::snap_to_end(iced::widget::Id::new(
+                    "ferrovela_log_scroll",
+                ));
             }
             Message::External => {
                 if let Some(id) = self.main_window_id {
@@ -330,10 +326,10 @@ impl ConfigEditor {
                 }
                 return window::close(id);
             }
-            Message::IdCaptured(id) => {
-                if self.log_window_id != Some(id) && self.main_window_id != Some(id) {
-                    self.main_window_id = Some(id);
-                }
+            Message::IdCaptured(id)
+                if self.log_window_id != Some(id) && self.main_window_id != Some(id) =>
+            {
+                self.main_window_id = Some(id);
             }
             _ => {}
         }
