@@ -26,6 +26,7 @@ pub struct ProxyConfig {
     pub port: u16,
     pub pac_file: Option<String>,
     pub allow_private_ips: bool,
+    pub listen_ip: String,
 }
 
 impl Default for ProxyConfig {
@@ -34,12 +35,34 @@ impl Default for ProxyConfig {
             port: default_port(),
             pac_file: None,
             allow_private_ips: false,
+            listen_ip: default_listen_ip(),
+        }
+    }
+}
+
+impl ProxyConfig {
+    /// The IP the proxy should actually bind to.
+    ///
+    /// Falls back to loopback whenever `allow_private_ips` is disabled,
+    /// regardless of what `listen_ip` contains. Exposing the proxy to the
+    /// LAN is only meaningful when the SSRF guard also allows internal
+    /// targets, so the two settings are enforced together here in the
+    /// library — not just in the UI — to close the `defaults write` backdoor.
+    pub fn effective_listen_ip(&self) -> &str {
+        if self.allow_private_ips {
+            &self.listen_ip
+        } else {
+            "127.0.0.1"
         }
     }
 }
 
 pub fn default_port() -> u16 {
     3128
+}
+
+pub fn default_listen_ip() -> String {
+    "127.0.0.1".to_string()
 }
 
 #[derive(Clone)]
@@ -297,11 +320,13 @@ pub fn load_config() -> Config {
     let port = read_cf_number_u16("proxy_port").unwrap_or(default_port());
     let pac_file = read_cf_string("proxy_pac_file");
     let allow_private_ips = read_cf_bool("proxy_allow_private_ips").unwrap_or(false);
+    let listen_ip = read_cf_string("proxy_listen_ip").unwrap_or_else(default_listen_ip);
 
     let proxy = ProxyConfig {
         port,
         pac_file,
         allow_private_ips,
+        listen_ip,
     };
 
     let upstream = load_upstream_config();
@@ -350,6 +375,7 @@ pub fn save_config(config: &Config) -> Result<()> {
     write_cf_number_u16("proxy_port", config.proxy.port);
     write_cf_string("proxy_pac_file", config.proxy.pac_file.as_deref());
     write_cf_bool("proxy_allow_private_ips", config.proxy.allow_private_ips);
+    write_cf_string("proxy_listen_ip", Some(&config.proxy.listen_ip));
 
     if let Some(ref upstream) = config.upstream {
         write_cf_string("upstream_auth_type", Some(&upstream.auth_type));
@@ -429,6 +455,30 @@ mod tests {
     }
 
     #[test]
+    fn test_effective_listen_ip() {
+        let loopback = ProxyConfig {
+            listen_ip: "0.0.0.0".to_string(),
+            allow_private_ips: false,
+            ..Default::default()
+        };
+        assert_eq!(loopback.effective_listen_ip(), "127.0.0.1");
+
+        let lan = ProxyConfig {
+            listen_ip: "0.0.0.0".to_string(),
+            allow_private_ips: true,
+            ..Default::default()
+        };
+        assert_eq!(lan.effective_listen_ip(), "0.0.0.0");
+
+        let loopback_explicit = ProxyConfig {
+            listen_ip: "127.0.0.1".to_string(),
+            allow_private_ips: true,
+            ..Default::default()
+        };
+        assert_eq!(loopback_explicit.effective_listen_ip(), "127.0.0.1");
+    }
+
+    #[test]
     fn test_config_round_trip_via_cfpreferences() {
         let _lock = PREFS_LOCK.lock().unwrap();
         reset_preferences();
@@ -437,6 +487,7 @@ mod tests {
                 port: 9999,
                 pac_file: Some("http://test.pac".to_string()),
                 allow_private_ips: true,
+                listen_ip: "0.0.0.0".to_string(),
             },
             upstream: Some(UpstreamConfig {
                 auth_type: "basic".to_string(),
@@ -459,6 +510,7 @@ mod tests {
         assert_eq!(loaded.proxy.port, 9999);
         assert_eq!(loaded.proxy.pac_file.as_deref(), Some("http://test.pac"));
         assert!(loaded.proxy.allow_private_ips);
+        assert_eq!(loaded.proxy.listen_ip, "0.0.0.0");
 
         let upstream = loaded.upstream.unwrap();
         assert_eq!(upstream.auth_type, "basic");
@@ -485,6 +537,7 @@ mod tests {
         assert_eq!(config.proxy.port, default_port());
         assert!(config.proxy.pac_file.is_none());
         assert!(!config.proxy.allow_private_ips);
+        assert_eq!(config.proxy.listen_ip, default_listen_ip());
         assert!(config.upstream.is_none());
         assert!(config.exceptions.is_none());
     }

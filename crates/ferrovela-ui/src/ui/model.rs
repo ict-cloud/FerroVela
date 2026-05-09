@@ -59,6 +59,7 @@ pub enum Tab {
     Proxy,
     Upstream,
     Exceptions,
+    Advanced,
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +80,10 @@ pub enum Message {
     UpstreamProxyUrlChanged(String),
     UpstreamUseKeyringToggled(bool),
     ExceptionsHostsChanged(String),
+    AllowPrivateIpsToggled(bool),
+    ProxyListenIpChanged(String),
+    AdvancedUnlockRequested,
+    AdvancedUnlockResult(bool),
     // Service
     ToggleService(bool),
     RestartService,
@@ -106,6 +111,10 @@ pub struct ConfigEditor {
     pub proxy_port: String,
     pub pac_file: String,
     pub allow_private_ips: bool,
+    // Advanced tab
+    pub proxy_listen_ip: String,
+    pub proxy_listen_ip_error: Option<String>,
+    pub advanced_unlocked: bool,
     // Upstream tab
     pub upstream_auth_type: AuthType,
     pub upstream_username: String,

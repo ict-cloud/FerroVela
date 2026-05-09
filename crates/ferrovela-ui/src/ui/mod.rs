@@ -1,3 +1,4 @@
+pub(crate) mod auth;
 mod controller;
 mod model;
 mod view;
