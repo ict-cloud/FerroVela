@@ -160,19 +160,20 @@ pub fn stop() -> Result<()> {
     }
 }
 
-/// Returns `true` when the launchd service is loaded (i.e. bootstrapped).
+/// Returns `true` when the proxy process is actually running (has a live PID).
 ///
-/// A loaded service is either running or in the process of starting.
-/// We intentionally do **not** require `pid > 0` because launchd may take a
-/// moment to fork the process after bootstrap, and checking only for a live
-/// PID would race with the UI poll and flip the toggle back to "Stopped".
+/// A service can be bootstrapped into the launchd domain without the proxy
+/// binary being active — e.g. after a reboot when `RunAtLoad` is `false`.
+/// macOS automatically bootstraps every plist in `~/Library/LaunchAgents/` at
+/// login, so checking the `launchctl print` exit code alone would wrongly
+/// report "Running" when the process was never spawned.
+///
+/// The previous race-condition concern (UI poll flipping to "Stopped" before
+/// launchd assigns a PID) is mitigated upstream: `handle_toggle_service` sets
+/// `service_status = Running` optimistically on a successful `kickstart`, which
+/// blocks until the process is spawned. The 3-second poll gives ample margin.
 pub fn is_running() -> bool {
-    let uid = uid();
-    Command::new("launchctl")
-        .args(["print", &format!("gui/{uid}/{SERVICE_LABEL}")])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    pid().is_some()
 }
 
 /// Returns the PID of the proxy process, or `None` when the service is not

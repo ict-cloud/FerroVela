@@ -4,7 +4,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
 
 use ferrovela_lib::config::{
-    default_port, load_config, save_config, Config, ExceptionsConfig, ProxyConfig, UpstreamConfig,
+    default_listen_ip, default_port, load_config, save_config, Config, ExceptionsConfig,
+    ProxyConfig, UpstreamConfig,
 };
 use ferrovela_lib::launchd;
 
@@ -26,6 +27,9 @@ impl ConfigEditor {
             proxy_port: config.proxy.port.to_string(),
             pac_file: config.proxy.pac_file.clone().unwrap_or_default(),
             allow_private_ips: config.proxy.allow_private_ips,
+            proxy_listen_ip: config.proxy.listen_ip.clone(),
+            proxy_listen_ip_error: validate_listen_ip(&config.proxy.listen_ip),
+            advanced_unlocked: false,
             upstream_auth_type: upstream
                 .map(|u| AuthType::from(u.auth_type.as_str()))
                 .unwrap_or_default(),
@@ -80,7 +84,36 @@ impl ConfigEditor {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::TabSelected(tab) => {
+                // Relock the Advanced tab whenever the user navigates away.
+                if self.active_tab == Tab::Advanced && tab != Tab::Advanced {
+                    self.advanced_unlocked = false;
+                }
                 self.active_tab = tab;
+                Task::none()
+            }
+            Message::AdvancedUnlockRequested => {
+                if self.advanced_unlocked {
+                    // Already unlocked — clicking the lock again relocks immediately.
+                    self.advanced_unlocked = false;
+                    return Task::none();
+                }
+                // Locked — kick off the blocking auth sheet on a background thread.
+                Task::perform(
+                    async {
+                        tokio::task::spawn_blocking(crate::ui::auth::request_advanced_unlock)
+                            .await
+                            .unwrap_or(false)
+                    },
+                    Message::AdvancedUnlockResult,
+                )
+            }
+            Message::AdvancedUnlockResult(ok) => {
+                self.advanced_unlocked = ok;
+                if !ok {
+                    self.status = "Unlock cancelled.".to_string();
+                    self.status_is_error = false;
+                    self.status_timestamp = Some(std::time::Instant::now());
+                }
                 Task::none()
             }
             Message::ProxyPortChanged(_)
@@ -92,7 +125,9 @@ impl ConfigEditor {
             | Message::UpstreamDomainChanged(_)
             | Message::UpstreamWorkstationChanged(_)
             | Message::UpstreamProxyUrlChanged(_)
-            | Message::ExceptionsHostsChanged(_) => {
+            | Message::ExceptionsHostsChanged(_)
+            | Message::AllowPrivateIpsToggled(_)
+            | Message::ProxyListenIpChanged(_) => {
                 self.handle_config_message(message);
                 Task::none()
             }
@@ -164,6 +199,11 @@ impl ConfigEditor {
             Message::UpstreamDomainChanged(v) => self.upstream_domain = v,
             Message::UpstreamWorkstationChanged(v) => self.upstream_workstation = v,
             Message::ExceptionsHostsChanged(v) => self.exceptions_hosts = v,
+            Message::AllowPrivateIpsToggled(v) => self.allow_private_ips = v,
+            Message::ProxyListenIpChanged(v) => {
+                self.proxy_listen_ip_error = validate_listen_ip(&v);
+                self.proxy_listen_ip = v;
+            }
             _ => return,
         }
 
@@ -180,6 +220,7 @@ impl ConfigEditor {
         self.proxy_port_error.is_some()
             || self.pac_file_error.is_some()
             || self.upstream_proxy_url_error.is_some()
+            || self.proxy_listen_ip_error.is_some()
     }
 
     fn handle_toggle_service(&mut self, start: bool) {
@@ -246,18 +287,14 @@ impl ConfigEditor {
                     return window::gain_focus(id);
                 }
             }
-            Message::OpenLogsAt(pos) => {
-                if self.log_window_id.is_none() {
-                    return self.open_log_window(pos);
-                }
+            Message::OpenLogsAt(pos) if self.log_window_id.is_none() => {
+                return self.open_log_window(pos);
             }
-            Message::Tick => {
-                if self.show_logs || self.log_window_id.is_some() {
-                    self.load_logs();
-                    return iced::widget::operation::snap_to_end(iced::widget::Id::new(
-                        "ferrovela_log_scroll",
-                    ));
-                }
+            Message::Tick if (self.show_logs || self.log_window_id.is_some()) => {
+                self.load_logs();
+                return iced::widget::operation::snap_to_end(iced::widget::Id::new(
+                    "ferrovela_log_scroll",
+                ));
             }
             Message::External => {
                 if let Some(id) = self.main_window_id {
@@ -289,10 +326,10 @@ impl ConfigEditor {
                 }
                 return window::close(id);
             }
-            Message::IdCaptured(id) => {
-                if self.log_window_id != Some(id) && self.main_window_id != Some(id) {
-                    self.main_window_id = Some(id);
-                }
+            Message::IdCaptured(id)
+                if self.log_window_id != Some(id) && self.main_window_id != Some(id) =>
+            {
+                self.main_window_id = Some(id);
             }
             _ => {}
         }
@@ -350,6 +387,11 @@ impl ConfigEditor {
                 port,
                 pac_file,
                 allow_private_ips: self.allow_private_ips,
+                listen_ip: if self.proxy_listen_ip.trim().is_empty() {
+                    default_listen_ip()
+                } else {
+                    self.proxy_listen_ip.trim().to_string()
+                },
             },
             upstream,
             exceptions,
@@ -388,7 +430,7 @@ impl ConfigEditor {
             if password.is_empty() {
                 return;
             }
-            match keyring::Entry::new("ferrovela", username) {
+            match keyring_core::Entry::new("ferrovela", username) {
                 Ok(entry) => {
                     if let Err(e) = entry.set_password(password) {
                         error!("Failed to save password to keyring: {}", e);
@@ -398,7 +440,7 @@ impl ConfigEditor {
                 }
                 Err(e) => error!("Failed to create keyring entry: {}", e),
             }
-        } else if let Ok(entry) = keyring::Entry::new("ferrovela", username) {
+        } else if let Ok(entry) = keyring_core::Entry::new("ferrovela", username) {
             let _ = entry.delete_credential();
         }
     }
@@ -547,6 +589,18 @@ fn system_prefers_dark() -> bool {
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "Dark")
         .unwrap_or(false)
+}
+
+fn validate_listen_ip(s: &str) -> Option<String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None; // empty means "use default" — treated as valid
+    }
+    if s.parse::<std::net::IpAddr>().is_ok() {
+        None
+    } else {
+        Some("Not a valid IP address".to_string())
+    }
 }
 
 fn validate_port(s: &str) -> Option<String> {

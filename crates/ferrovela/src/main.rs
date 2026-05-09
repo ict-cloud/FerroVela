@@ -16,6 +16,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    if let Err(e) = keyring::use_native_store(false) {
+        eprintln!("Warning: Failed to initialize keyring store: {e}. Keyring-based passwords will not work.");
+    }
+
     let cfg = Arc::new(config::load_config());
 
     let pac_engine = if let Some(ref path) = cfg.proxy.pac_file {

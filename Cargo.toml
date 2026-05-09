@@ -9,11 +9,20 @@ resolver = "2"
 [workspace.package]
 version = "0.4.2"
 edition = "2021"
+authors = ["Pascal Rudnik <master@ict-cloud.ch>"]
+license = "MIT"
+repository = "https://github.com/ict-cloud/FerroVela"
+homepage = "https://github.com/ict-cloud/FerroVela"
+categories = ["proxy"]
+keywords = ["proxy", "tool", "developer"]
+rust-version = "1.95"
+
 
 [workspace.dependencies]
 anyhow = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-keyring = "3.6.*"
+keyring = "4.0.*"
+keyring-core = "1"
 log = "0.4"
 
 [profile.release]

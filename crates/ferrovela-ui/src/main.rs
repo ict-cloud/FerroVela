@@ -14,6 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    if let Err(e) = keyring::use_native_store(false) {
+        eprintln!("Warning: Failed to initialize keyring store: {e}. Keyring-based passwords will not work.");
+    }
+
     // Single-instance check via Unix socket.
     // If another UI instance is already running, connecting to its socket signals it
     // to bring itself to the front, then we exit.

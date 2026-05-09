@@ -541,7 +541,17 @@ impl Proxy {
             Layer,
         };
 
-        let listen_addr = format!("127.0.0.1:{}", self.config.proxy.port);
+        if self.config.proxy.listen_ip != "127.0.0.1" && !self.config.proxy.allow_private_ips {
+            warn!(
+                "proxy_listen_ip={} is ignored because allow_private_ips is disabled; binding to 127.0.0.1",
+                self.config.proxy.listen_ip
+            );
+        }
+        let listen_addr = format!(
+            "{}:{}",
+            self.config.proxy.effective_listen_ip(),
+            self.config.proxy.port
+        );
 
         let state = ProxyState {
             config: Arc::clone(&self.config),
