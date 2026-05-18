@@ -149,6 +149,13 @@ A `.devcontainer` configuration is included for use with VS Code Dev Containers 
 
    > **First launch — Gatekeeper**: Because the bundle uses ad-hoc signing (not a Developer ID), macOS will block it on the first open. Right-click the app in Finder and choose **Open**, then confirm the prompt. You only need to do this once.
 
+   > **Re-signing with your own Developer ID**: If you have a *Developer ID Application* certificate in your keychain, you can replace the ad-hoc signature with a proper one so Gatekeeper accepts the app without the right-click workaround:
+   > ```bash
+   > chmod +x scripts/resign.sh
+   > ./scripts/resign.sh target/release/bundle/osx/FerroVela.app
+   > ```
+   > The script picks up the first matching certificate automatically. For distribution outside direct download, notarization via `xcrun notarytool` is still required after signing.
+
 ### Development builds
 
 To run the UI directly without assembling a full bundle (useful during development):
