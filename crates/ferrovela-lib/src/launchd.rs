@@ -103,6 +103,39 @@ fn install() -> Result<()> {
     Ok(())
 }
 
+/// Removes the service from the launchd domain.
+/// Returns `Ok(())` both on success and when the service was not registered
+/// (ESRCH / error 3 — "No such process").
+fn bootout_service(target: &str) -> Result<()> {
+    let out = Command::new("launchctl")
+        .args(["bootout", target])
+        .output()
+        .context("running launchctl bootout")?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // Error 3 = ESRCH — service not registered; treat as already stopped.
+    if stderr.contains("3:") || stderr.contains("No such process") {
+        return Ok(());
+    }
+    Err(anyhow::anyhow!(
+        "launchctl bootout failed: {}",
+        stderr.trim()
+    ))
+}
+
+/// Polls `pid()` up to `attempts` times with `interval_ms` between each try.
+fn wait_for_pid(attempts: u32, interval_ms: u64) -> Option<u32> {
+    for _ in 0..attempts {
+        if let Some(p) = pid() {
+            return Some(p);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(interval_ms));
+    }
+    None
+}
+
 pub fn start() -> Result<()> {
     install()?;
     let uid = uid();
@@ -110,15 +143,31 @@ pub fn start() -> Result<()> {
     let target = format!("gui/{uid}");
     let service = format!("gui/{uid}/{SERVICE_LABEL}");
 
-    // Load the service definition into the launchd domain.
+    // ── Phase A: bootstrap ────────────────────────────────────────────────
+    // If the service is already registered (error 37), the launchd domain
+    // still holds the old in-memory configuration. Evict it first so the
+    // freshly-written plist is picked up on re-bootstrap.
     let out = Command::new("launchctl")
         .args(["bootstrap", &target, plist.to_str().unwrap_or("")])
         .output()
         .context("running launchctl bootstrap")?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        // Error 37 = "already loaded" – harmless when re-starting after a crash.
-        if !stderr.contains("37:") {
+        if stderr.contains("37:") {
+            bootout_service(&service)
+                .map_err(|e| anyhow::anyhow!("failed to clear stale service registration: {e}"))?;
+            let out2 = Command::new("launchctl")
+                .args(["bootstrap", &target, plist.to_str().unwrap_or("")])
+                .output()
+                .context("running launchctl bootstrap (after stale cleanup)")?;
+            if !out2.status.success() {
+                let stderr2 = String::from_utf8_lossy(&out2.stderr);
+                return Err(anyhow::anyhow!(
+                    "re-bootstrap failed after clearing stale registration: {}",
+                    stderr2.trim()
+                ));
+            }
+        } else {
             return Err(anyhow::anyhow!(
                 "launchctl bootstrap failed: {}",
                 stderr.trim()
@@ -126,38 +175,36 @@ pub fn start() -> Result<()> {
         }
     }
 
-    // The plist uses RunAtLoad=false so bootstrap alone does not spawn the
-    // process.  Kick-start it explicitly.
+    // ── Phase B: kickstart ────────────────────────────────────────────────
+    // RunAtLoad=false means bootstrap alone does not spawn the process.
     let out = Command::new("launchctl")
         .args(["kickstart", &service])
         .output()
         .context("running launchctl kickstart")?;
-    if out.status.success() {
-        Ok(())
-    } else {
+    if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        Err(anyhow::anyhow!(
+        return Err(anyhow::anyhow!(
             "launchctl kickstart failed: {}",
             stderr.trim()
-        ))
+        ));
     }
+
+    // ── Phase C: verify the process is actually alive ─────────────────────
+    // kickstart returns 0 once the process is spawned, not once it stays
+    // alive. Poll for up to 500 ms (10 × 50 ms) to catch immediate crashes.
+    if wait_for_pid(10, 50).is_none() {
+        return Err(anyhow::anyhow!(
+            "service process exited immediately after launch — check {} for details",
+            log_path().display()
+        ));
+    }
+
+    Ok(())
 }
 
 pub fn stop() -> Result<()> {
     let uid = uid();
-    let out = Command::new("launchctl")
-        .args(["bootout", &format!("gui/{uid}/{SERVICE_LABEL}")])
-        .output()
-        .context("running launchctl bootout")?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        Err(anyhow::anyhow!(
-            "launchctl bootout failed: {}",
-            stderr.trim()
-        ))
-    }
+    bootout_service(&format!("gui/{uid}/{SERVICE_LABEL}"))
 }
 
 /// Returns `true` when the proxy process is actually running (has a live PID).
@@ -168,10 +215,8 @@ pub fn stop() -> Result<()> {
 /// login, so checking the `launchctl print` exit code alone would wrongly
 /// report "Running" when the process was never spawned.
 ///
-/// The previous race-condition concern (UI poll flipping to "Stopped" before
-/// launchd assigns a PID) is mitigated upstream: `handle_toggle_service` sets
-/// `service_status = Running` optimistically on a successful `kickstart`, which
-/// blocks until the process is spawned. The 3-second poll gives ample margin.
+/// `start()` verifies that a PID appears before returning `Ok(())`, so the
+/// 3-second poll exists only to catch crashes that happen after the initial check.
 pub fn is_running() -> bool {
     pid().is_some()
 }
