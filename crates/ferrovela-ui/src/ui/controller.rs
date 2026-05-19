@@ -257,7 +257,13 @@ impl ConfigEditor {
     }
 
     fn handle_restart_service(&mut self) {
-        let _ = launchd::stop();
+        if let Err(e) = launchd::stop() {
+            error!("Failed to stop service during restart: {}", e);
+            self.status = format!("Failed to stop service: {e}");
+            self.status_is_error = true;
+            self.status_timestamp = Some(std::time::Instant::now());
+            return;
+        }
         match launchd::start() {
             Ok(()) => {
                 self.service_status = ServiceStatus::Running;
