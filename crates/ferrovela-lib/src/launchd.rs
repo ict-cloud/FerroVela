@@ -119,7 +119,10 @@ fn bootout_service(target: &str) -> Result<()> {
     if stderr.contains("3:") || stderr.contains("No such process") {
         return Ok(());
     }
-    Err(anyhow::anyhow!("launchctl bootout failed: {}", stderr.trim()))
+    Err(anyhow::anyhow!(
+        "launchctl bootout failed: {}",
+        stderr.trim()
+    ))
 }
 
 /// Polls `pid()` up to `attempts` times with `interval_ms` between each try.
@@ -151,9 +154,8 @@ pub fn start() -> Result<()> {
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         if stderr.contains("37:") {
-            bootout_service(&service).map_err(|e| {
-                anyhow::anyhow!("failed to clear stale service registration: {e}")
-            })?;
+            bootout_service(&service)
+                .map_err(|e| anyhow::anyhow!("failed to clear stale service registration: {e}"))?;
             let out2 = Command::new("launchctl")
                 .args(["bootstrap", &target, plist.to_str().unwrap_or("")])
                 .output()
