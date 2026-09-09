@@ -20,23 +20,6 @@ pub fn is_private_target(target: &str) -> bool {
     }
 }
 
-/// If `bytes` look like the beginning of an HTTP CONNECT request, extract and
-/// return the `host:port` target from the request line.
-///
-/// Designed to work on a partial peek buffer: the target must be fully present
-/// in `bytes`, but nothing else needs to be.  If parsing fails the caller
-/// should conservatively allow the connection.
-pub fn connect_target_from_peek(bytes: &[u8]) -> Option<String> {
-    let s = std::str::from_utf8(bytes).ok()?;
-    // Take text up to the first newline (or end-of-buffer if no newline yet).
-    let first_line = s.lines().next()?;
-    let mut parts = first_line.split_whitespace();
-    if !parts.next()?.eq_ignore_ascii_case("CONNECT") {
-        return None;
-    }
-    Some(parts.next()?.to_string())
-}
-
 fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_private_v4(v4),
@@ -132,48 +115,5 @@ mod tests {
     fn target_without_port_is_handled() {
         assert!(is_private_target("127.0.0.1"));
         assert!(!is_private_target("1.1.1.1"));
-    }
-
-    // ── connect_target_from_peek ──────────────────────────────────────────────
-
-    #[test]
-    fn extracts_connect_target() {
-        let bytes = b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n";
-        assert_eq!(
-            connect_target_from_peek(bytes),
-            Some("example.com:443".to_string())
-        );
-    }
-
-    #[test]
-    fn extracts_connect_target_from_partial_buffer() {
-        // Peek may not contain the full request — only the first line matters.
-        let bytes = b"CONNECT 192.168.1.1:443 HTTP/1.1\r\n";
-        assert_eq!(
-            connect_target_from_peek(bytes),
-            Some("192.168.1.1:443".to_string())
-        );
-    }
-
-    #[test]
-    fn returns_none_for_non_connect() {
-        assert_eq!(
-            connect_target_from_peek(b"GET http://example.com/ HTTP/1.1\r\n"),
-            None
-        );
-    }
-
-    #[test]
-    fn returns_none_for_empty() {
-        assert_eq!(connect_target_from_peek(b""), None);
-    }
-
-    #[test]
-    fn case_insensitive_method() {
-        let bytes = b"connect 10.0.0.1:80 HTTP/1.1\r\n";
-        assert_eq!(
-            connect_target_from_peek(bytes),
-            Some("10.0.0.1:80".to_string())
-        );
     }
 }
