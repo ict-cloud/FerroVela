@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         None
     };
 
-    let proxy = Proxy::new(cfg, pac_engine, None);
+    let proxy = Proxy::new(cfg, pac_engine);
     if let Err(e) = proxy.run().await {
         error!("Proxy error: {}", e);
         return Err(e);
