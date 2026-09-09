@@ -61,7 +61,6 @@ pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamA
                 None
             }
         }
-        "mock_kerberos" => Some(Box::new(mock_kerberos::MockKerberosAuthenticator::new())),
         "ntlm" => {
             if let (Some(u), Some(p)) = (&config.username, &password) {
                 Some(Box::new(ntlm::NtlmAuthenticator::new(
