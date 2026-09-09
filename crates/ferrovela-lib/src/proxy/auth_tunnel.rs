@@ -65,7 +65,6 @@ pub async fn read_http_headers(
         .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
 }
 
-
 /// Return the value of the `Proxy-Authenticate` header (first occurrence),
 /// e.g. `"NTLM"`, `"NTLM <base64>"`, `"Negotiate"`, `"Negotiate <base64>"`.
 ///

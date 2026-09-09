@@ -69,7 +69,8 @@ struct ConnectResponder {
 }
 
 impl rama::Service<rama::http::Request> for ConnectResponder {
-    type Output = rama::http::layer::upgrade::UpgradeResponse<rama::http::Request, rama::http::Response>;
+    type Output =
+        rama::http::layer::upgrade::UpgradeResponse<rama::http::Request, rama::http::Response>;
     type Error = rama::http::Response;
 
     async fn serve(&self, req: rama::http::Request) -> Result<Self::Output, Self::Error> {
@@ -454,10 +455,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn new(
-        config: Arc<Config>,
-        pac: Option<PacEngine>,
-    ) -> Self {
+    pub fn new(config: Arc<Config>, pac: Option<PacEngine>) -> Self {
         let authenticator = if let Some(upstream_conf) = &config.upstream {
             create_authenticator(upstream_conf)
                 .map(|b| -> Arc<dyn UpstreamAuthenticator> { Arc::from(b) })
@@ -543,7 +541,9 @@ impl Proxy {
                 connect_responder,
                 connect_handler,
             )
-            .into_layer(service_fn(move |req| plain_http_handler(state.clone(), req))),
+            .into_layer(service_fn(move |req| {
+                plain_http_handler(state.clone(), req)
+            })),
         );
 
         info!("Listening on http://{}", listen_addr);
@@ -600,7 +600,9 @@ impl Proxy {
                 connect_responder,
                 connect_handler,
             )
-            .into_layer(service_fn(move |req| plain_http_handler(state.clone(), req))),
+            .into_layer(service_fn(move |req| {
+                plain_http_handler(state.clone(), req)
+            })),
         );
 
         let std_listener = listener.into_std()?;
