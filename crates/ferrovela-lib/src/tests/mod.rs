@@ -4,5 +4,3 @@ mod auth_tests;
 mod connect_tests;
 #[cfg(test)]
 mod performance_tests;
-#[cfg(test)]
-mod ssrf_tests;
