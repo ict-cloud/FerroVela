@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
-    if let Err(e) = keyring::use_native_store(false) {
+    if let Err(e) = keyring::Entry::store_status() {
         eprintln!("Warning: Failed to initialize keyring store: {e}. Keyring-based passwords will not work.");
     }
 
