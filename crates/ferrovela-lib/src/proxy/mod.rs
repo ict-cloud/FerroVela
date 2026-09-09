@@ -2,7 +2,6 @@ use base64::Engine as _;
 use log::{debug, error, info, warn};
 use std::convert::Infallible;
 use std::sync::Arc;
-use tokio::sync::mpsc::Sender;
 
 use crate::auth::{create_authenticator, UpstreamAuthenticator};
 use crate::config::Config;
@@ -11,16 +10,6 @@ use crate::pac::PacEngine;
 pub mod auth_tunnel;
 pub mod http_utils;
 pub mod ssrf;
-
-pub const MAGIC_SHOW_REQUEST: &str =
-    "GET /__ferrovela/show HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
-
-const MAGIC_SHOW_PATH: &str = "/__ferrovela/show";
-
-#[derive(Debug, Clone)]
-pub enum ProxySignal {
-    Show,
-}
 
 /// Extracts `host:port` from a proxy URL.
 ///
@@ -45,7 +34,6 @@ struct ProxyState {
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
     authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
-    signal_sender: Option<Sender<ProxySignal>>,
     /// Pre-computed Base64 of `"user:pass"` for Basic upstream auth.
     /// `None` when no Basic auth is configured.
     basic_auth_b64: Option<Arc<str>>,
@@ -223,7 +211,6 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
 
 /// Handles plain (non-CONNECT) HTTP requests.
 ///
-/// - Magic show request (`GET /__ferrovela/show`) → 200 + signal.
 /// - Upstream proxy configured → forward request, adding `Proxy-Authorization`
 ///   for Basic auth.
 /// - No upstream (or exception) → direct connection, rewrites request to
@@ -232,19 +219,6 @@ async fn plain_http_handler(
     state: ProxyState,
     req: rama::http::Request,
 ) -> Result<rama::http::Response, Infallible> {
-    // ── Magic IPC show request ─────────────────────────────────────────
-    if req.uri().path_or_root().as_ref() == MAGIC_SHOW_PATH {
-        if let Some(sender) = &state.signal_sender {
-            let _ = sender.send(ProxySignal::Show).await;
-        }
-        return Ok(rama::http::Response::builder()
-            .status(rama::http::StatusCode::OK)
-            .header("Content-Length", "0")
-            .header("Connection", "close")
-            .body(rama::http::Body::empty())
-            .unwrap());
-    }
-
     // ── Derive target host:port for proxy resolution ───────────────────
     // §9: Access URI components directly without cloning the whole Uri.
     // `host` becomes an owned String so the borrow on `req` is released
@@ -476,7 +450,6 @@ pub struct Proxy {
     config: Arc<Config>,
     pac: Arc<Option<PacEngine>>,
     authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
-    signal_sender: Option<Sender<ProxySignal>>,
     basic_auth_b64: Option<Arc<str>>,
 }
 
@@ -484,7 +457,6 @@ impl Proxy {
     pub fn new(
         config: Arc<Config>,
         pac: Option<PacEngine>,
-        signal_sender: Option<Sender<ProxySignal>>,
     ) -> Self {
         let authenticator = if let Some(upstream_conf) = &config.upstream {
             create_authenticator(upstream_conf)
@@ -513,7 +485,6 @@ impl Proxy {
             config,
             pac: Arc::new(pac),
             authenticator,
-            signal_sender,
             basic_auth_b64,
         }
     }
@@ -552,7 +523,6 @@ impl Proxy {
             config: Arc::clone(&self.config),
             pac: Arc::clone(&self.pac),
             authenticator: self.authenticator.clone(),
-            signal_sender: self.signal_sender.clone(),
             basic_auth_b64: self.basic_auth_b64.clone(),
         };
 
@@ -610,7 +580,6 @@ impl Proxy {
             config: Arc::clone(&self.config),
             pac: Arc::clone(&self.pac),
             authenticator: self.authenticator.clone(),
-            signal_sender: self.signal_sender.clone(),
             basic_auth_b64: self.basic_auth_b64.clone(),
         };
 

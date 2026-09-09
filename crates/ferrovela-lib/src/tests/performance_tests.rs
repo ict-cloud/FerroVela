@@ -74,7 +74,7 @@ async fn start_performance_proxy(upstream_port: u16) -> u16 {
         exceptions: None,
     };
 
-    let proxy = Proxy::new(Arc::new(config), None, None);
+    let proxy = Proxy::new(Arc::new(config), None);
     tokio::spawn(async move {
         let _ = proxy.run_with_listener(listener).await;
     });
