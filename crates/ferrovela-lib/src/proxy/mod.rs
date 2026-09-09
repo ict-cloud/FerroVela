@@ -55,7 +55,7 @@ struct ProxyState {
 
 /// The resolved target and upstream proxy address, inserted by the CONNECT
 /// responder so the upgrade handler can pick them up without re-running PAC.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, rama::extensions::Extension)]
 struct ConnectRouting {
     /// `host:port` the client wants to reach.
     target: String,
@@ -80,24 +80,16 @@ struct ConnectResponder {
     pac: Arc<Option<PacEngine>>,
 }
 
-impl rama::Service<ProxyState, rama::http::Request> for ConnectResponder {
-    type Response = (
-        rama::http::Response,
-        rama::Context<ProxyState>,
-        rama::http::Request,
-    );
+impl rama::Service<rama::http::Request> for ConnectResponder {
+    type Output = rama::http::layer::upgrade::UpgradeResponse<rama::http::Request, rama::http::Response>;
     type Error = rama::http::Response;
 
-    async fn serve(
-        &self,
-        mut ctx: rama::Context<ProxyState>,
-        req: rama::http::Request,
-    ) -> Result<Self::Response, Self::Error> {
+    async fn serve(&self, req: rama::http::Request) -> Result<Self::Output, Self::Error> {
         // CONNECT URI is authority-form: "host:port"
         let target = req
             .uri()
             .authority()
-            .map(|a| a.as_str().to_owned())
+            .map(|a| a.to_string())
             .ok_or_else(|| {
                 warn!("CONNECT request missing authority");
                 bad_request()
@@ -114,14 +106,17 @@ impl rama::Service<ProxyState, rama::http::Request> for ConnectResponder {
             return Err(forbidden());
         }
 
-        // Store routing decision in the context so the upgrade handler can use it.
-        ctx.insert(ConnectRouting { target, proxy_addr });
-
         let response = rama::http::Response::builder()
             .status(rama::http::StatusCode::OK)
             .body(rama::http::Body::empty())
             .unwrap();
-        Ok((response, ctx, req))
+
+        // Attach the routing decision to the upgraded connection's extensions so
+        // the upgrade handler can pick it up without re-running PAC.
+        Ok(
+            rama::http::layer::upgrade::UpgradeResponse::new(req, response)
+                .with_extension(ConnectRouting { target, proxy_addr }),
+        )
     }
 }
 
@@ -137,23 +132,26 @@ impl rama::Service<ProxyState, rama::http::Request> for ConnectResponder {
 /// Then copies bytes bidirectionally between the client's `Upgraded` socket and
 /// the upstream `TcpStream`.
 #[derive(Clone)]
-struct ConnectHandler;
+struct ConnectHandler {
+    state: ProxyState,
+}
 
-impl rama::Service<ProxyState, rama::http::layer::upgrade::Upgraded> for ConnectHandler {
-    type Response = ();
+impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
+    type Output = ();
     type Error = Infallible;
 
     async fn serve(
         &self,
-        ctx: rama::Context<ProxyState>,
         mut upgraded: rama::http::layer::upgrade::Upgraded,
     ) -> Result<(), Infallible> {
-        let state = ctx.state();
+        use rama::extensions::ExtensionsRef;
 
-        let routing = match ctx.get::<ConnectRouting>() {
+        let state = &self.state;
+
+        let routing = match upgraded.extensions().get_ref::<ConnectRouting>() {
             Some(r) => r.clone(),
             None => {
-                error!("ConnectHandler: ConnectRouting missing from context");
+                error!("ConnectHandler: ConnectRouting missing from extensions");
                 return Ok(());
             }
         };
@@ -231,13 +229,11 @@ impl rama::Service<ProxyState, rama::http::layer::upgrade::Upgraded> for Connect
 /// - No upstream (or exception) → direct connection, rewrites request to
 ///   origin-form.
 async fn plain_http_handler(
-    ctx: rama::Context<ProxyState>,
+    state: ProxyState,
     req: rama::http::Request,
 ) -> Result<rama::http::Response, Infallible> {
-    let state = ctx.state();
-
     // ── Magic IPC show request ─────────────────────────────────────────
-    if req.uri().path() == MAGIC_SHOW_PATH {
+    if req.uri().path_or_root().as_ref() == MAGIC_SHOW_PATH {
         if let Some(sender) = &state.signal_sender {
             let _ = sender.send(ProxySignal::Show).await;
         }
@@ -253,7 +249,11 @@ async fn plain_http_handler(
     // §9: Access URI components directly without cloning the whole Uri.
     // `host` becomes an owned String so the borrow on `req` is released
     // before `req` is moved into the forward helpers below.
-    let host = req.uri().host().unwrap_or("").to_owned();
+    let host = req
+        .uri()
+        .host_str()
+        .map(|h| h.into_owned())
+        .unwrap_or_default();
     let port = req
         .uri()
         .port_u16()
@@ -384,12 +384,7 @@ fn write_http_request(
     if absolute_form {
         out.extend_from_slice(parts.uri.to_string().as_bytes());
     } else {
-        let path = parts
-            .uri
-            .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/");
-        out.extend_from_slice(path.as_bytes());
+        out.extend_from_slice(parts.uri.request_target().as_bytes());
     }
     out.extend_from_slice(b" HTTP/1.1\r\n");
 
@@ -567,16 +562,24 @@ impl Proxy {
             config: Arc::clone(&self.config),
             pac: Arc::clone(&self.pac),
         };
+        let connect_handler = ConnectHandler {
+            state: state.clone(),
+        };
 
-        let http_service = HttpServer::auto(exec).service(
-            UpgradeLayer::new(MethodMatcher::CONNECT, connect_responder, ConnectHandler)
-                .into_layer(service_fn(plain_http_handler)),
+        let http_service = HttpServer::auto(exec.clone()).service(
+            UpgradeLayer::new_with_services(
+                exec.clone(),
+                MethodMatcher::CONNECT,
+                connect_responder,
+                connect_handler,
+            )
+            .into_layer(service_fn(move |req| plain_http_handler(state.clone(), req))),
         );
 
         info!("Listening on http://{}", listen_addr);
 
-        TcpListener::build_with_state(state)
-            .bind(listen_addr)
+        TcpListener::build(exec)
+            .bind_address(listen_addr)
             .await?
             .serve(http_service)
             .await;
@@ -617,15 +620,22 @@ impl Proxy {
             config: Arc::clone(&self.config),
             pac: Arc::clone(&self.pac),
         };
+        let connect_handler = ConnectHandler {
+            state: state.clone(),
+        };
 
-        let http_service = HttpServer::auto(exec).service(
-            UpgradeLayer::new(MethodMatcher::CONNECT, connect_responder, ConnectHandler)
-                .into_layer(service_fn(plain_http_handler)),
+        let http_service = HttpServer::auto(exec.clone()).service(
+            UpgradeLayer::new_with_services(
+                exec.clone(),
+                MethodMatcher::CONNECT,
+                connect_responder,
+                connect_handler,
+            )
+            .into_layer(service_fn(move |req| plain_http_handler(state.clone(), req))),
         );
 
         let std_listener = listener.into_std()?;
-        TcpListener::try_from(std_listener)?
-            .with_state(state)
+        TcpListener::try_from_std_tcp_listener(std_listener, exec)?
             .serve(http_service)
             .await;
 

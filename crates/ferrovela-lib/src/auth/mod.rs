@@ -14,7 +14,7 @@ pub trait UpstreamAuthenticator: Send + Sync {
 
 /// Trait for an authentication session.
 /// Handles the handshake process.
-pub trait AuthSession: Send + Sync {
+pub trait AuthSession: Send {
     /// Processes a challenge from the server (e.g., from `Proxy-Authenticate` header).
     /// If `challenge` is `None`, it's the initial step.
     /// Returns the value for the `Proxy-Authorization` header, or `None` if no header is needed (e.g. handshake complete).
