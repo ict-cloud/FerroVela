@@ -1,35 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use ferrovela_lib::proxy::auth_tunnel::{http_method, parse_connect_target};
 use ferrovela_lib::proxy::http_utils::{find_header_value, parse_content_length};
 use std::hint::black_box;
-
-// ─── CONNECT request parsing ─────────────────────────────────────────────────
-
-fn bench_parse_connect_target(c: &mut Criterion) {
-    let mut group = c.benchmark_group("CONNECT Request Parsing");
-
-    let connect_line = "CONNECT example.com:443 HTTP/1.1";
-    let connect_ipv6 = "CONNECT [2001:db8::1]:443 HTTP/1.1";
-    let not_connect = "GET http://example.com/ HTTP/1.1";
-
-    group.bench_function("parse_connect_typical", |b| {
-        b.iter(|| parse_connect_target(black_box(connect_line)))
-    });
-
-    group.bench_function("parse_connect_ipv6", |b| {
-        b.iter(|| parse_connect_target(black_box(connect_ipv6)))
-    });
-
-    group.bench_function("parse_connect_not_connect", |b| {
-        b.iter(|| parse_connect_target(black_box(not_connect)))
-    });
-
-    group.bench_function("http_method", |b| {
-        b.iter(|| http_method(black_box(connect_line)))
-    });
-
-    group.finish();
-}
 
 // ─── 407 response parsing (NTLM/Kerberos challenge loop) ─────────────────────
 //
@@ -78,5 +49,5 @@ fn bench_challenge_parsing(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_parse_connect_target, bench_challenge_parsing);
+criterion_group!(benches, bench_challenge_parsing);
 criterion_main!(benches);

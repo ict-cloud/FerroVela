@@ -21,7 +21,7 @@ rust-version = "1.95"
 [workspace.dependencies]
 anyhow = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-keyring = "4.0.*"
+keyring = "4.2.*"
 keyring-core = "1"
 log = "0.4"
 

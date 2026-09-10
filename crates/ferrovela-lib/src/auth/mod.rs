@@ -14,7 +14,7 @@ pub trait UpstreamAuthenticator: Send + Sync {
 
 /// Trait for an authentication session.
 /// Handles the handshake process.
-pub trait AuthSession: Send + Sync {
+pub trait AuthSession: Send {
     /// Processes a challenge from the server (e.g., from `Proxy-Authenticate` header).
     /// If `challenge` is `None`, it's the initial step.
     /// Returns the value for the `Proxy-Authorization` header, or `None` if no header is needed (e.g. handshake complete).
@@ -61,7 +61,6 @@ pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamA
                 None
             }
         }
-        "mock_kerberos" => Some(Box::new(mock_kerberos::MockKerberosAuthenticator::new())),
         "ntlm" => {
             if let (Some(u), Some(p)) = (&config.username, &password) {
                 Some(Box::new(ntlm::NtlmAuthenticator::new(

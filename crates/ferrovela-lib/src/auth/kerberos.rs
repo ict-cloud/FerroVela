@@ -52,17 +52,14 @@ impl AuthSession for KerberosSession {
 
         if self.ctx.is_none() {
             debug!("Initializing GSSAPI context for: {}", self.service_name);
-            let name = Name::new(
-                self.service_name.as_bytes(),
-                Some(&GSS_NT_HOSTBASED_SERVICE),
-            )
-            .context("Failed to create GSS Name")?;
+            let name = Name::new(self.service_name.as_bytes(), Some(GSS_NT_HOSTBASED_SERVICE))
+                .context("Failed to create GSS Name")?;
 
             let ctx = ClientCtx::new(
                 None,
                 name,
                 CtxFlags::GSS_C_MUTUAL_FLAG | CtxFlags::GSS_C_REPLAY_FLAG,
-                Some(&GSS_MECH_KRB5),
+                Some(GSS_MECH_KRB5),
             );
             self.ctx = Some(ctx);
         }
