@@ -154,9 +154,9 @@ pub(crate) async fn send_connect(
 pub async fn perform_authenticated_connect(
     upstream_proxy: &str,
     target: &str,
-    authenticator: &Arc<dyn UpstreamAuthenticator>,
+    authenticator: Option<&Arc<dyn UpstreamAuthenticator>>,
 ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
-    let mut session = authenticator.create_session(proxy_host(upstream_proxy));
+    let mut session = authenticator.map(|a| a.create_session(proxy_host(upstream_proxy)));
     let mut upstream = TcpStream::connect(upstream_proxy).await?;
     if let Err(e) = upstream.set_nodelay(true) {
         debug!("set_nodelay failed: {}", e);
@@ -171,6 +171,11 @@ pub async fn perform_authenticated_connect(
         debug!("upstream accepted CONNECT without auth");
         return Ok(upstream);
     }
+    let Some(session) = session.as_mut() else {
+        return Err(
+            format!("upstream proxy returned {status} and no credentials are configured").into(),
+        );
+    };
 
     // ── challenge-response loop ───────────────────────────────────────────
     // Max 4 iterations covers Kerberos (1) + NTLM (2) with headroom.

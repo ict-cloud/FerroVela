@@ -148,46 +148,19 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
         match routing.proxy_addr.as_deref() {
             Some(proxy_url) => {
                 let addr = auth_tunnel::normalize_proxy_addr(proxy_url);
-                if let Some(auth) = &state.authenticator {
-                    // Authenticated tunnel (NTLM, Kerberos, Basic).
-                    match auth_tunnel::perform_authenticated_connect(&addr, target, auth).await {
-                        Ok(mut upstream) => {
-                            let r =
-                                tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await;
-                            debug!("tunnel {} via {} closed: {:?}", target, addr, r);
-                        }
-                        Err(e) => {
-                            error!("auth tunnel to {} via {}: {}", target, addr, e);
-                        }
+                // Authenticated (NTLM, Kerberos, Basic) or plain upstream CONNECT.
+                match auth_tunnel::perform_authenticated_connect(
+                    &addr,
+                    target,
+                    state.authenticator.as_ref(),
+                )
+                .await
+                {
+                    Ok(mut upstream) => {
+                        let r = tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await;
+                        debug!("tunnel {} via {} closed: {:?}", target, addr, r);
                     }
-                } else {
-                    // Unauthenticated tunnel through upstream proxy.
-                    match tokio::net::TcpStream::connect(&addr).await {
-                        Ok(mut upstream) => {
-                            if let Err(e) = upstream.set_nodelay(true) {
-                                debug!("set_nodelay failed: {}", e);
-                            }
-                            if let Err(e) =
-                                auth_tunnel::send_connect(&mut upstream, target, None).await
-                            {
-                                error!("send CONNECT {} to upstream {}: {}", target, addr, e);
-                                return Ok(());
-                            }
-                            match auth_tunnel::read_proxy_response(&mut upstream).await {
-                                Ok((200, ..)) => {
-                                    let r =
-                                        tokio::io::copy_bidirectional(&mut upgraded, &mut upstream)
-                                            .await;
-                                    debug!("tunnel {} via {} closed: {:?}", target, addr, r);
-                                }
-                                Ok((status, ..)) => {
-                                    error!("upstream returned {} for CONNECT {}", status, target);
-                                }
-                                Err(e) => error!("upstream response for {}: {}", target, e),
-                            }
-                        }
-                        Err(e) => error!("connect to upstream {}: {}", addr, e),
-                    }
+                    Err(e) => error!("tunnel to {} via {}: {}", target, addr, e),
                 }
             }
             None => {
