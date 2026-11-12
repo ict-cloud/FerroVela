@@ -1,4 +1,4 @@
-use iced::{window, Subscription, Task, Theme};
+use iced::{window, Subscription, Task};
 use log::error;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
@@ -66,11 +66,6 @@ impl ConfigEditor {
                 ServiceStatus::Stopped
             },
             restart_needed: false,
-            appearance: if system_prefers_dark() {
-                Theme::Dark
-            } else {
-                Theme::Light
-            },
             show_logs: false,
             log_content: String::new(),
             log_search: String::new(),
@@ -144,11 +139,6 @@ impl ConfigEditor {
                     ServiceStatus::Running
                 } else {
                     ServiceStatus::Stopped
-                };
-                self.appearance = if system_prefers_dark() {
-                    Theme::Dark
-                } else {
-                    Theme::Light
                 };
                 if let Some(ts) = self.status_timestamp {
                     if ts.elapsed() >= Duration::from_secs(3) {
@@ -587,15 +577,6 @@ fn peer_is_owner(stream: &tokio::net::UnixStream) -> bool {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-/// Returns `true` when macOS is currently in Dark appearance.
-fn system_prefers_dark() -> bool {
-    std::process::Command::new("defaults")
-        .args(["read", "-g", "AppleInterfaceStyle"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "Dark")
-        .unwrap_or(false)
-}
 
 fn validate_listen_ip(s: &str) -> Option<String> {
     let s = s.trim();
