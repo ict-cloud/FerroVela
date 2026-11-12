@@ -35,7 +35,7 @@ test-prefs = []
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["async_tokio"] }
-tempfile = "3.25.0"
+tempfile = "3.25"
 
 [lib]
 name = "ferrovela_lib"
