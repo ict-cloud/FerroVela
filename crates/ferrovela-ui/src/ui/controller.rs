@@ -558,20 +558,23 @@ fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
 }
 
 /// Returns `true` when the peer on `stream` has the same effective UID as the
-/// current process.  Uses `getpeereid(2)`, which is available on macOS/BSD.
+/// current process.  Fails closed when the peer credentials cannot be read.
 fn peer_is_owner(stream: &tokio::net::UnixStream) -> bool {
-    use std::os::unix::io::AsRawFd;
-    let fd = stream.as_raw_fd();
-    let mut peer_uid: libc::uid_t = libc::uid_t::MAX;
-    let mut peer_gid: libc::gid_t = libc::gid_t::MAX;
-    // SAFETY: fd is valid for the lifetime of this call; pointers are stack-allocated.
-    if unsafe { libc::getpeereid(fd, &mut peer_uid, &mut peer_gid) } != 0 {
-        log::debug!("getpeereid failed: {}", std::io::Error::last_os_error());
-        return false;
+    match stream.peer_cred() {
+        // SAFETY: geteuid() is always safe to call.
+        Ok(cred) => cred.uid() == unsafe { libc::geteuid() },
+        Err(e) => {
+            log::debug!("reading peer credentials failed: {e}");
+            false
+        }
     }
-    // SAFETY: geteuid() is always safe to call.
-    let own_uid = unsafe { libc::geteuid() };
-    peer_uid == own_uid
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn peer_is_owner_accepts_same_user() {
+    let (a, _b) = tokio::net::UnixStream::pair().unwrap();
+    assert!(peer_is_owner(&a));
 }
 
 // ---------------------------------------------------------------------------
