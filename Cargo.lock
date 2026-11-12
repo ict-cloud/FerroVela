@@ -1558,7 +1558,6 @@ version = "0.4.7"
 dependencies = [
  "anyhow",
  "base64",
- "bytes",
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "criterion",
@@ -1568,7 +1567,6 @@ dependencies = [
  "libc",
  "libgssapi",
  "log",
- "memchr",
  "ntlmclient",
  "rama",
  "reqwest",

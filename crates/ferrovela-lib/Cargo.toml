@@ -12,7 +12,6 @@ rust-version.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
-bytes = "1"
 log.workspace = true
 anyhow.workspace = true
 rquickjs = { version = "0.14", features = ["bindgen"] }
@@ -20,7 +19,6 @@ base64 = "0.23"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 libgssapi = { version = "0.11", default-features = false }
 ntlmclient = "0.2.*"
-memchr = "2.8.*"
 glob = "0.3.*"
 keyring.workspace = true
 keyring-core.workspace = true
@@ -41,11 +39,6 @@ path = "src/lib.rs"
 [[bench]]
 name = "connect_bench"
 harness = false
-
-[[bench]]
-name = "subsequence_bench"
-harness = false
-path = "benches/subsequence_bench.rs"
 
 [[bench]]
 name = "parse_content_length_bench"

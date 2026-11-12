@@ -1,12 +1,3 @@
-/// Find the first occurrence of `needle` in `haystack`.
-///
-/// Uses the SIMD-accelerated `memchr::memmem` searcher rather than a
-/// byte-at-a-time `windows().position()` loop.
-#[inline]
-pub fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    memchr::memmem::find(haystack, needle)
-}
-
 /// Parse the `Content-Length` header value from a raw header block.
 ///
 /// Returns 0 if the header is absent or malformed.
@@ -43,14 +34,6 @@ pub fn find_header_value<'a>(headers: &'a str, key: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_find_subsequence() {
-        let haystack = b"hello world";
-        assert_eq!(find_subsequence(haystack, b"world"), Some(6));
-        assert_eq!(find_subsequence(haystack, b"foo"), None);
-        assert_eq!(find_subsequence(haystack, b"hello"), Some(0));
-    }
 
     #[test]
     fn test_parse_content_length() {

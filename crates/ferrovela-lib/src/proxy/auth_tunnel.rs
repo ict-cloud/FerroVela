@@ -60,7 +60,7 @@ async fn read_head_bytes(
         let old_len = buf.len();
         buf.extend_from_slice(&chunk[..n]);
 
-        let end = memchr::memmem::find(&buf, b"\r\n\r\n").map(|p| p + 4);
+        let end = buf.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4);
         buf.truncate(end.unwrap_or(buf.len()));
         // Consume exactly the bytes kept from this peek.
         stream.read_exact(&mut chunk[..buf.len() - old_len]).await?;
