@@ -3,7 +3,6 @@ use anyhow::Result;
 
 pub mod basic;
 pub mod kerberos;
-pub mod mock_kerberos;
 pub mod ntlm;
 
 /// Trait for upstream authentication factory.

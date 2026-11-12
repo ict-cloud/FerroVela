@@ -5,7 +5,7 @@ use base64::Engine;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::auth::mock_kerberos::MockKerberosAuthenticator;
+use super::MockKerberosAuthenticator;
 use crate::auth::ntlm::NtlmAuthenticator;
 use crate::auth::UpstreamAuthenticator;
 use crate::proxy::auth_tunnel::{perform_authenticated_connect, read_http_headers};
@@ -95,7 +95,7 @@ async fn test_perform_authenticated_connect_direct_200() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
     let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_ok());
 }
@@ -128,7 +128,7 @@ async fn test_perform_authenticated_connect_407_then_200() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
     let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_ok());
 }
@@ -164,7 +164,7 @@ async fn test_perform_authenticated_connect_exhausted_407() {
         }
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
     let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -293,7 +293,7 @@ async fn test_perform_authenticated_connect_unexpected_status() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
     let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -336,7 +336,7 @@ async fn test_perform_authenticated_connect_407_with_body_and_close() {
         let _ = second.write_all(reply).await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
     let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_ok(), "{:?}", result.err());
 }
@@ -357,7 +357,7 @@ async fn test_perform_authenticated_connect_keeps_payload_after_200() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
     let mut upstream = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth)
         .await
         .unwrap();

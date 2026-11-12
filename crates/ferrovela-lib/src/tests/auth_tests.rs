@@ -1,6 +1,6 @@
+use super::MockKerberosAuthenticator;
 use crate::auth::basic::BasicAuthenticator;
 use crate::auth::kerberos::KerberosAuthenticator;
-use crate::auth::mock_kerberos::MockKerberosAuthenticator;
 use crate::auth::ntlm::NtlmAuthenticator;
 use crate::auth::UpstreamAuthenticator;
 use base64::Engine;
@@ -42,7 +42,7 @@ fn test_basic_session_empty_credentials() {
 
 #[test]
 fn test_mock_kerberos_auth() {
-    let auth = MockKerberosAuthenticator::new();
+    let auth = MockKerberosAuthenticator;
     let mut session = auth.create_session("proxy.example.com");
     let header = session.step(None).unwrap().unwrap();
     assert_eq!(header, "Negotiate MockKerberosToken");
