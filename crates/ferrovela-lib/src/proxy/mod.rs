@@ -81,7 +81,7 @@ impl rama::Service<rama::http::Request> for ConnectResponder {
             .map(|a| a.to_string())
             .ok_or_else(|| {
                 warn!("CONNECT request missing authority");
-                bad_request()
+                empty(rama::http::StatusCode::BAD_REQUEST)
             })?;
 
         let proxy_addr = resolve_proxy(&target, &self.config, &self.pac).await;
@@ -92,7 +92,7 @@ impl rama::Service<rama::http::Request> for ConnectResponder {
             && ssrf::is_private_target(&target)
         {
             warn!("SSRF blocked: CONNECT to private address {}", target);
-            return Err(forbidden());
+            return Err(empty(rama::http::StatusCode::FORBIDDEN));
         }
 
         let response = rama::http::Response::builder()
@@ -247,7 +247,7 @@ async fn plain_http_handler(
     };
 
     if target.is_empty() || host.is_empty() {
-        return Ok(bad_request());
+        return Ok(empty(rama::http::StatusCode::BAD_REQUEST));
     }
 
     let result = match resolve_proxy(&target, &state.config, &state.pac).await {
@@ -260,7 +260,7 @@ async fn plain_http_handler(
                 }
                 Err(e) => {
                     error!("plain HTTP: invalid upstream {}: {}", upstream_addr, e);
-                    return Ok(bad_gateway());
+                    return Ok(empty(rama::http::StatusCode::BAD_GATEWAY));
                 }
             }
             if let Some(b64) = state.basic_auth_b64.as_deref() {
@@ -270,7 +270,7 @@ async fn plain_http_handler(
                     }
                     Err(e) => {
                         error!("plain HTTP: invalid Proxy-Authorization value: {}", e);
-                        return Ok(bad_gateway());
+                        return Ok(empty(rama::http::StatusCode::BAD_GATEWAY));
                     }
                 }
             }
@@ -280,7 +280,7 @@ async fn plain_http_handler(
             // SSRF guard for plain HTTP direct connections.
             if !state.config.proxy.allow_private_ips && ssrf::is_private_target(&target) {
                 warn!("SSRF blocked: plain HTTP to private address {}", target);
-                return Ok(forbidden());
+                return Ok(empty(rama::http::StatusCode::FORBIDDEN));
             }
             forward_plain_http(req, &target).await
         }
@@ -288,7 +288,7 @@ async fn plain_http_handler(
 
     Ok(result.unwrap_or_else(|e| {
         error!("plain HTTP to {}: {}", target, e);
-        bad_gateway()
+        empty(rama::http::StatusCode::BAD_GATEWAY)
     }))
 }
 
@@ -321,25 +321,10 @@ async fn forward_plain_http(
 
 // ─── response helpers ─────────────────────────────────────────────────────────
 
-fn bad_request() -> rama::http::Response {
+/// Bodyless error response with the given status.
+fn empty(status: rama::http::StatusCode) -> rama::http::Response {
     rama::http::Response::builder()
-        .status(rama::http::StatusCode::BAD_REQUEST)
-        .header("Content-Length", "0")
-        .body(rama::http::Body::empty())
-        .unwrap()
-}
-
-fn forbidden() -> rama::http::Response {
-    rama::http::Response::builder()
-        .status(rama::http::StatusCode::FORBIDDEN)
-        .header("Content-Length", "0")
-        .body(rama::http::Body::empty())
-        .unwrap()
-}
-
-fn bad_gateway() -> rama::http::Response {
-    rama::http::Response::builder()
-        .status(rama::http::StatusCode::BAD_GATEWAY)
+        .status(status)
         .header("Content-Length", "0")
         .body(rama::http::Body::empty())
         .unwrap()
