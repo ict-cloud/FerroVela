@@ -1561,7 +1561,6 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
  "criterion",
- "glob",
  "keyring",
  "keyring-core",
  "libc",
