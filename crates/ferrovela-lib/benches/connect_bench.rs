@@ -1,13 +1,11 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use ferrovela_lib::proxy::http_utils::{find_header_value, parse_content_length};
+use ferrovela_lib::proxy::auth_tunnel::find_header_value;
 use std::hint::black_box;
 
 // ─── 407 response parsing (NTLM/Kerberos challenge loop) ─────────────────────
 //
-// On every auth round-trip the proxy reads a 407 response and extracts:
-//   1. The status code (parse_content_length is a proxy for the header scan).
-//   2. The Proxy-Authenticate challenge token.
-// These two operations happen up to four times per authenticated CONNECT.
+// On every auth round-trip the proxy reads a 407 response and extracts the
+// Proxy-Authenticate challenge token, up to four times per authenticated CONNECT.
 
 fn bench_challenge_parsing(c: &mut Criterion) {
     // Typical 407 NTLM Type-2 challenge response
@@ -40,10 +38,6 @@ fn bench_challenge_parsing(c: &mut Criterion) {
 
     group.bench_function("find_negotiate_challenge", |b| {
         b.iter(|| find_header_value(black_box(negotiate_407), black_box("Proxy-Authenticate")))
-    });
-
-    group.bench_function("parse_content_length_407", |b| {
-        b.iter(|| parse_content_length(black_box(ntlm_407)))
     });
 
     group.finish();

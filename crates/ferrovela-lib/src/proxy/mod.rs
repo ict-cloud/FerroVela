@@ -9,7 +9,6 @@ use crate::config::Config;
 use crate::pac::PacEngine;
 
 pub mod auth_tunnel;
-pub mod http_utils;
 pub mod ssrf;
 
 /// Extracts `host:port` from a proxy URL.
@@ -169,19 +168,19 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
                                 debug!("set_nodelay failed: {}", e);
                             }
                             if let Err(e) =
-                                auth_tunnel::send_connect_request(&mut upstream, target, None).await
+                                auth_tunnel::send_connect(&mut upstream, target, None).await
                             {
                                 error!("send CONNECT {} to upstream {}: {}", target, addr, e);
                                 return Ok(());
                             }
-                            match auth_tunnel::read_connect_response(&mut upstream).await {
-                                Ok(200) => {
+                            match auth_tunnel::read_proxy_response(&mut upstream).await {
+                                Ok((200, ..)) => {
                                     let r =
                                         tokio::io::copy_bidirectional(&mut upgraded, &mut upstream)
                                             .await;
                                     debug!("tunnel {} via {} closed: {:?}", target, addr, r);
                                 }
-                                Ok(status) => {
+                                Ok((status, ..)) => {
                                     error!("upstream returned {} for CONNECT {}", status, target);
                                 }
                                 Err(e) => error!("upstream response for {}: {}", target, e),

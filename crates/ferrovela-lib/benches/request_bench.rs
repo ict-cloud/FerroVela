@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use ferrovela_lib::proxy::http_utils::find_header_value;
+use ferrovela_lib::proxy::auth_tunnel::find_header_value;
 use std::hint::black_box;
 
 // ─── baseline: old serialize_http_request approach ───────────────────────────

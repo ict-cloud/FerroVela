@@ -51,7 +51,6 @@ The repository is a Cargo workspace with three crates:
         -   **`plain_http_handler`**: Handles all non-CONNECT requests — plain HTTP forwarding to upstream (with `Proxy-Authorization` for Basic auth) and direct plain HTTP.
     -   `auth_tunnel.rs`: Low-level authenticated CONNECT handshake (`perform_authenticated_connect`). Owns the multi-round 407 loop over a **single reused TCP connection** (required for stateful NTLM/Kerberos).
     -   `ssrf.rs`: Private-IP detection and SSRF guard.
-    -   `http_utils.rs`: HTTP parsing helpers.
 
 2.  **Authentication (`auth/`)**:
     -   **Architecture**: Uses an `AuthSession` trait to handle multi-step authentication handshakes (essential for NTLM and Negotiate).
