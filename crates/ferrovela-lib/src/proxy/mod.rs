@@ -194,21 +194,18 @@ async fn plain_http_handler(
     let port = req
         .uri()
         .port_u16()
-        .or_else(|| {
-            if req.uri().scheme_str() == Some("https") {
-                Some(443)
-            } else {
-                Some(80)
-            }
-        })
-        .unwrap_or(80);
+        .unwrap_or(if req.uri().scheme_str() == Some("https") {
+            443
+        } else {
+            80
+        });
     let target = if host.contains(':') {
         format!("[{}]:{}", host, port)
     } else {
         format!("{}:{}", host, port)
     };
 
-    if target.is_empty() || host.is_empty() {
+    if host.is_empty() {
         return Ok(empty(rama::http::StatusCode::BAD_REQUEST));
     }
 

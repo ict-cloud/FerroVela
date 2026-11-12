@@ -7,7 +7,7 @@ mod ui;
 mod tests;
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if let Err(e) = logger::init() {
+    if let Err(e) = logger::init_to(std::path::Path::new("service.log")) {
         eprintln!(
             "Warning: Failed to initialize file logger: {}. Continuing with stderr only.",
             e

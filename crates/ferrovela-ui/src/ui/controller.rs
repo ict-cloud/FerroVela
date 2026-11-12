@@ -66,7 +66,6 @@ impl ConfigEditor {
                 ServiceStatus::Stopped
             },
             restart_needed: false,
-            show_logs: false,
             log_content: String::new(),
             log_search: String::new(),
             main_window_id: Some(main_window_id),
@@ -272,7 +271,7 @@ impl ConfigEditor {
             Message::OpenLogsAt(pos) if self.log_window_id.is_none() => {
                 return self.open_log_window(pos);
             }
-            Message::Tick if (self.show_logs || self.log_window_id.is_some()) => {
+            Message::Tick if self.log_window_id.is_some() => {
                 self.load_logs();
                 return iced::widget::operation::snap_to_end(iced::widget::Id::new(
                     "ferrovela_log_scroll",
@@ -294,7 +293,6 @@ impl ConfigEditor {
             Message::WindowClosed(id) => {
                 if Some(id) == self.log_window_id {
                     self.log_window_id = None;
-                    self.show_logs = false;
                 } else if Some(id) == self.main_window_id {
                     self.main_window_id = None;
                     let _ = std::fs::remove_file(launchd::ui_socket_path());
@@ -304,7 +302,6 @@ impl ConfigEditor {
             Message::WindowCloseRequested(id) => {
                 if Some(id) == self.log_window_id {
                     self.log_window_id = None;
-                    self.show_logs = false;
                 }
                 return window::close(id);
             }
@@ -325,11 +322,7 @@ impl ConfigEditor {
     fn build_config(&self) -> Config {
         let port = self.proxy_port.parse().unwrap_or(default_port());
 
-        let pac_file = if self.pac_file.trim().is_empty() {
-            None
-        } else {
-            Some(self.pac_file.trim().to_string())
-        };
+        let pac_file = non_empty_trimmed(&self.pac_file);
 
         let upstream = if self.upstream_auth_type == AuthType::None
             && self.upstream_username.is_empty()
@@ -438,7 +431,6 @@ impl ConfigEditor {
         self.log_window_id = Some(id);
         self.log_content = String::new();
         self.load_logs();
-        self.show_logs = true;
         open_task.map(|_| Message::Tick)
     }
 
@@ -462,7 +454,7 @@ impl ConfigEditor {
     // -----------------------------------------------------------------------
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let tick = if self.show_logs || self.log_window_id.is_some() {
+        let tick = if self.log_window_id.is_some() {
             iced::time::every(Duration::from_millis(500)).map(|_| Message::Tick)
         } else {
             Subscription::none()

@@ -137,7 +137,6 @@ pub struct ConfigEditor {
     pub service_status: ServiceStatus,
     pub restart_needed: bool,
     // Log window
-    pub show_logs: bool,
     pub log_content: String,
     pub log_search: String,
     // Window management
