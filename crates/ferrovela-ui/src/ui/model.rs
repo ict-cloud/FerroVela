@@ -1,4 +1,4 @@
-use iced::{window, Theme};
+use iced::window;
 use std::fmt;
 
 // ---------------------------------------------------------------------------
@@ -136,10 +136,7 @@ pub struct ConfigEditor {
     // Service control
     pub service_status: ServiceStatus,
     pub restart_needed: bool,
-    // Appearance
-    pub appearance: Theme,
     // Log window
-    pub show_logs: bool,
     pub log_content: String,
     pub log_search: String,
     // Window management

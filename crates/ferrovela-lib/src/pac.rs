@@ -1,5 +1,4 @@
 use anyhow::{Context as AnyhowContext, Result};
-use glob::Pattern;
 use log::error;
 use rquickjs::function::Rest;
 use rquickjs::{Context, Function, Runtime};
@@ -34,27 +33,29 @@ struct PacRequest {
     respond_to: oneshot::Sender<Result<String>>,
 }
 
+/// Shell-style match for `shExpMatch`: `*` matches any run of characters
+/// (including none), `?` exactly one.  Greedy with single-star backtracking,
+/// so `***` and long runs of `*` stay linear-ish with no crate needed.
 fn glob_match(pattern: &str, text: &str) -> bool {
-    // The glob crate fails to parse patterns with more than two consecutive asterisks
-    // (e.g. `***`) returning a PatternError ("wildcards are either regular `*` or recursive `**`").
-    // We collapse consecutive asterisks to `*` before parsing.
-    let mut collapsed_pattern = String::with_capacity(pattern.len());
-    let mut last_was_star = false;
-    for c in pattern.chars() {
-        if c == '*' {
-            if !last_was_star {
-                collapsed_pattern.push(c);
-                last_was_star = true;
-            }
+    let (p, t): (Vec<char>, Vec<char>) = (pattern.chars().collect(), text.chars().collect());
+    let (mut pi, mut ti, mut star, mut mark) = (0, 0, None, 0);
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star = Some(pi);
+            mark = ti;
+            pi += 1;
+        } else if let Some(s) = star {
+            pi = s + 1;
+            mark += 1;
+            ti = mark;
         } else {
-            collapsed_pattern.push(c);
-            last_was_star = false;
+            return false;
         }
     }
-
-    Pattern::new(&collapsed_pattern)
-        .map(|p| p.matches(text))
-        .unwrap_or(false)
+    p[pi..].iter().all(|&c| c == '*')
 }
 
 fn register_pac_functions(ctx: &rquickjs::Ctx<'_>) -> rquickjs::Result<()> {

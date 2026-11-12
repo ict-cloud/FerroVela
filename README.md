@@ -192,7 +192,7 @@ Total Duration: 800.16ms
 Requests Per Second (RPS): 6248.71
 ```
 
-Criterion micro-benchmarks covering the CONNECT path, header parsing, and request serialization are also available:
+Criterion benchmarks for the per-request paths are also available: `resolve_proxy` (`connect_bench_v2`), PAC evaluation (`pac_bench`), and a plain HTTP request through the running proxy (`proxy_bench`):
 
 ```bash
 # Save a baseline before making changes

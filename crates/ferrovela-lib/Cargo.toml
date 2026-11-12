@@ -12,16 +12,15 @@ rust-version.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
-bytes = "1"
 log.workspace = true
+# rama logs accept errors via tracing; forward them to `log` (no subscriber is installed).
+tracing = { version = "0.1", features = ["log"] }
 anyhow.workspace = true
 rquickjs = { version = "0.14", features = ["bindgen"] }
 base64 = "0.23"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 libgssapi = { version = "0.11", default-features = false }
 ntlmclient = "0.2.*"
-memchr = "2.8.*"
-glob = "0.3.*"
 keyring.workspace = true
 keyring-core.workspace = true
 rama = { version = "0.4", features = ["http-full"] }
@@ -30,34 +29,29 @@ libc = "0.2"
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
+[features]
+# Redirects preferences to the `com.ictcloud.ferrovela.test` domain; for dependants' tests only.
+test-prefs = []
+
 [dev-dependencies]
 criterion = { version = "0.8", features = ["async_tokio"] }
-tempfile = "3.25.0"
+tempfile = "3.25"
 
 [lib]
 name = "ferrovela_lib"
 path = "src/lib.rs"
 
 [[bench]]
-name = "connect_bench"
-harness = false
-
-[[bench]]
-name = "subsequence_bench"
-harness = false
-path = "benches/subsequence_bench.rs"
-
-[[bench]]
-name = "parse_content_length_bench"
-harness = false
-path = "benches/parse_content_length_bench.rs"
-
-[[bench]]
-name = "request_bench"
-harness = false
-path = "benches/request_bench.rs"
-
-[[bench]]
 name = "connect_bench_v2"
 harness = false
 path = "benches/connect_bench_v2.rs"
+
+[[bench]]
+name = "pac_bench"
+harness = false
+path = "benches/pac_bench.rs"
+
+[[bench]]
+name = "proxy_bench"
+harness = false
+path = "benches/proxy_bench.rs"

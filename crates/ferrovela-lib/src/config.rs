@@ -1,14 +1,23 @@
 use anyhow::Result;
-use core_foundation::base::{CFGetTypeID, TCFType};
-use core_foundation::boolean::{CFBoolean, CFBooleanGetTypeID};
-use core_foundation::number::{CFNumber, CFNumberGetTypeID};
-use core_foundation::string::{CFString, CFStringGetTypeID};
+use core_foundation::array::CFArray;
+use core_foundation::base::{CFType, TCFType};
+use core_foundation::boolean::CFBoolean;
+use core_foundation::number::CFNumber;
+use core_foundation::string::CFString;
+use core_foundation::ConcreteCFType;
 use core_foundation_sys::preferences::{
     CFPreferencesAppSynchronize, CFPreferencesCopyAppValue, CFPreferencesSetAppValue,
 };
 use std::ptr;
 
-const APP_ID: &str = "com.ictcloud.ferrovela";
+/// Preferences domain.  Test builds (this crate's own tests, or dependants
+/// enabling the `test-prefs` feature) use a separate domain so tests never
+/// touch the user's real settings.
+const APP_ID: &str = if cfg!(any(test, feature = "test-prefs")) {
+    "com.ictcloud.ferrovela.test"
+} else {
+    "com.ictcloud.ferrovela"
+};
 
 // ---------------------------------------------------------------------------
 // Config structs
@@ -155,161 +164,89 @@ impl ExceptionsConfig {
 // CFPreferences helpers
 // ---------------------------------------------------------------------------
 
-fn read_cf_string(key: &str) -> Option<String> {
+/// Copy the preference `key` and return it if it has the expected CF type.
+fn copy<T: ConcreteCFType>(key: &str) -> Option<T> {
     let cf_key = CFString::new(key);
     let cf_app = CFString::new(APP_ID);
+    // SAFETY: both refs outlive the call; a non-null result is owned by us
+    // (Create rule) and is released when the wrapper drops.
     unsafe {
         let value =
             CFPreferencesCopyAppValue(cf_key.as_concrete_TypeRef(), cf_app.as_concrete_TypeRef());
         if value.is_null() {
             return None;
         }
-        if CFGetTypeID(value) != CFStringGetTypeID() {
-            core_foundation::base::CFRelease(value);
-            return None;
-        }
-        let cf_str = CFString::wrap_under_create_rule(value as _);
-        Some(cf_str.to_string())
+        CFType::wrap_under_create_rule(value).downcast_into()
     }
+}
+
+/// Set the preference `key`, or remove it when `value` is `None`.
+fn set(key: &str, value: Option<CFType>) {
+    let cf_key = CFString::new(key);
+    let cf_app = CFString::new(APP_ID);
+    let value_ref = value.as_ref().map_or(ptr::null(), |v| v.as_CFTypeRef());
+    // SAFETY: all refs are valid for the duration of the call.
+    unsafe {
+        CFPreferencesSetAppValue(
+            cf_key.as_concrete_TypeRef(),
+            value_ref,
+            cf_app.as_concrete_TypeRef(),
+        );
+    }
+}
+
+fn read_cf_string(key: &str) -> Option<String> {
+    copy::<CFString>(key).map(|s| s.to_string())
 }
 
 fn read_cf_bool(key: &str) -> Option<bool> {
-    let cf_key = CFString::new(key);
-    let cf_app = CFString::new(APP_ID);
-    unsafe {
-        let value =
-            CFPreferencesCopyAppValue(cf_key.as_concrete_TypeRef(), cf_app.as_concrete_TypeRef());
-        if value.is_null() {
-            return None;
-        }
-        if CFGetTypeID(value) != CFBooleanGetTypeID() {
-            core_foundation::base::CFRelease(value);
-            return None;
-        }
-        let cf_bool = CFBoolean::wrap_under_create_rule(value as _);
-        Some(cf_bool.into())
-    }
+    copy::<CFBoolean>(key).map(Into::into)
 }
 
 fn read_cf_number_u16(key: &str) -> Option<u16> {
-    let cf_key = CFString::new(key);
-    let cf_app = CFString::new(APP_ID);
-    unsafe {
-        let value =
-            CFPreferencesCopyAppValue(cf_key.as_concrete_TypeRef(), cf_app.as_concrete_TypeRef());
-        if value.is_null() {
-            return None;
-        }
-        if CFGetTypeID(value) != CFNumberGetTypeID() {
-            core_foundation::base::CFRelease(value);
-            return None;
-        }
-        let cf_num = CFNumber::wrap_under_create_rule(value as _);
-        cf_num.to_i64().and_then(|n| u16::try_from(n).ok())
-    }
+    copy::<CFNumber>(key)?
+        .to_i64()
+        .and_then(|n| u16::try_from(n).ok())
 }
 
 fn read_cf_string_array(key: &str) -> Option<Vec<String>> {
-    use core_foundation::array::{CFArray, CFArrayGetTypeID};
-    let cf_key = CFString::new(key);
-    let cf_app = CFString::new(APP_ID);
-    unsafe {
-        let value =
-            CFPreferencesCopyAppValue(cf_key.as_concrete_TypeRef(), cf_app.as_concrete_TypeRef());
-        if value.is_null() {
-            return None;
-        }
-        if CFGetTypeID(value) != CFArrayGetTypeID() {
-            core_foundation::base::CFRelease(value);
-            return None;
-        }
-        let cf_array: CFArray<CFString> = CFArray::wrap_under_create_rule(value as _);
-        let strings: Vec<String> = cf_array.iter().map(|s| s.to_string()).collect();
-        Some(strings)
-    }
+    let array = copy::<CFArray>(key)?;
+    Some(
+        array
+            .iter()
+            .filter(|item| !item.is_null())
+            // SAFETY: non-null array elements are valid CF objects borrowed from `array`.
+            .filter_map(|item| unsafe { CFType::wrap_under_get_rule(*item) }.downcast::<CFString>())
+            .map(|s| s.to_string())
+            .collect(),
+    )
 }
 
 fn write_cf_string(key: &str, value: Option<&str>) {
-    let cf_key = CFString::new(key);
-    let cf_app = CFString::new(APP_ID);
-    unsafe {
-        match value {
-            Some(v) => {
-                let cf_val = CFString::new(v);
-                CFPreferencesSetAppValue(
-                    cf_key.as_concrete_TypeRef(),
-                    cf_val.as_concrete_TypeRef() as _,
-                    cf_app.as_concrete_TypeRef(),
-                );
-            }
-            None => {
-                CFPreferencesSetAppValue(
-                    cf_key.as_concrete_TypeRef(),
-                    ptr::null(),
-                    cf_app.as_concrete_TypeRef(),
-                );
-            }
-        }
-    }
+    set(key, value.map(|v| CFString::new(v).into_CFType()));
 }
 
 fn write_cf_bool(key: &str, value: bool) {
-    let cf_key = CFString::new(key);
-    let cf_app = CFString::new(APP_ID);
-    let cf_val = CFBoolean::from(value);
-    unsafe {
-        CFPreferencesSetAppValue(
-            cf_key.as_concrete_TypeRef(),
-            cf_val.as_concrete_TypeRef() as _,
-            cf_app.as_concrete_TypeRef(),
-        );
-    }
+    set(key, Some(CFBoolean::from(value).into_CFType()));
 }
 
 fn write_cf_number_u16(key: &str, value: u16) {
-    let cf_key = CFString::new(key);
-    let cf_app = CFString::new(APP_ID);
-    let cf_val = CFNumber::from(value as i64);
-    unsafe {
-        CFPreferencesSetAppValue(
-            cf_key.as_concrete_TypeRef(),
-            cf_val.as_concrete_TypeRef() as _,
-            cf_app.as_concrete_TypeRef(),
-        );
-    }
+    set(key, Some(CFNumber::from(value as i64).into_CFType()));
 }
 
 fn write_cf_string_array(key: &str, values: Option<&[String]>) {
-    use core_foundation::array::CFArray;
-    let cf_key = CFString::new(key);
-    let cf_app = CFString::new(APP_ID);
-    unsafe {
-        match values {
-            Some(vals) if !vals.is_empty() => {
-                let cf_strings: Vec<CFString> = vals.iter().map(|s| CFString::new(s)).collect();
-                let cf_array = CFArray::from_CFTypes(&cf_strings);
-                CFPreferencesSetAppValue(
-                    cf_key.as_concrete_TypeRef(),
-                    cf_array.as_concrete_TypeRef() as _,
-                    cf_app.as_concrete_TypeRef(),
-                );
-            }
-            _ => {
-                CFPreferencesSetAppValue(
-                    cf_key.as_concrete_TypeRef(),
-                    ptr::null(),
-                    cf_app.as_concrete_TypeRef(),
-                );
-            }
-        }
-    }
+    let array = values.filter(|v| !v.is_empty()).map(|vals| {
+        let cf_strings: Vec<CFString> = vals.iter().map(|s| CFString::new(s)).collect();
+        CFArray::from_CFTypes(&cf_strings).into_CFType()
+    });
+    set(key, array);
 }
 
-fn synchronize() {
+/// Flush pending writes to permanent storage; `false` if the system reports failure.
+fn synchronize() -> bool {
     let cf_app = CFString::new(APP_ID);
-    unsafe {
-        CFPreferencesAppSynchronize(cf_app.as_concrete_TypeRef());
-    }
+    // SAFETY: `cf_app` is valid for the duration of the call.
+    unsafe { CFPreferencesAppSynchronize(cf_app.as_concrete_TypeRef()) != 0 }
 }
 
 // ---------------------------------------------------------------------------
@@ -401,12 +338,17 @@ pub fn save_config(config: &Config) -> Result<()> {
         write_cf_string_array("exceptions_hosts", None);
     }
 
-    synchronize();
+    if !synchronize() {
+        anyhow::bail!("failed to write preferences to permanent storage");
+    }
     Ok(())
 }
 
 /// Mutex that serialises all tests touching CFPreferences so they cannot
 /// race against each other.  Used by both `config::tests` and UI crate tests.
+/// Only exists in test builds, so a dependant cannot use it without also
+/// getting the test preferences domain.
+#[cfg(any(test, feature = "test-prefs"))]
 pub static PREFS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
@@ -525,6 +467,18 @@ mod tests {
         assert_eq!(exceptions.hosts, vec!["localhost", "*.internal"]);
 
         // Clean up test preferences
+        reset_preferences();
+    }
+
+    #[test]
+    fn test_wrong_type_reads_as_none() {
+        let _lock = PREFS_LOCK.lock().unwrap();
+        write_cf_string("proxy_port", Some("not a number"));
+        write_cf_bool("exceptions_hosts", true);
+        assert_eq!(read_cf_number_u16("proxy_port"), None);
+        assert_eq!(read_cf_bool("proxy_port"), None);
+        assert_eq!(read_cf_string_array("exceptions_hosts"), None);
+        assert_eq!(load_config().proxy.port, default_port());
         reset_preferences();
     }
 

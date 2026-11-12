@@ -1,9 +1,9 @@
 use crate::config::UpstreamConfig;
 use anyhow::Result;
+use log::{debug, warn};
 
 pub mod basic;
 pub mod kerberos;
-pub mod mock_kerberos;
 pub mod ntlm;
 
 /// Trait for upstream authentication factory.
@@ -22,17 +22,38 @@ pub trait AuthSession: Send {
     fn step(&mut self, challenge: Option<&str>) -> Result<Option<String>>;
 }
 
-pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamAuthenticator>> {
-    let mut password = config.password.clone();
-    if config.use_keyring && password.is_none() {
-        if let Some(username) = &config.username {
-            if let Ok(entry) = keyring_core::Entry::new("ferrovela", username) {
-                if let Ok(pw) = entry.get_password() {
-                    password = Some(pw);
-                }
-            }
+/// The upstream password: the configured one, or else the keyring entry for
+/// the username when keyring storage is enabled.
+pub fn resolve_password(config: &UpstreamConfig) -> Option<String> {
+    if let Some(password) = &config.password {
+        return Some(password.clone());
+    }
+    if !config.use_keyring {
+        return None;
+    }
+    let username = config.username.as_deref()?;
+    let entry = match keyring_core::Entry::new("ferrovela", username) {
+        Ok(entry) => entry,
+        Err(e) => {
+            warn!("keyring: cannot open entry for {username}: {e}");
+            return None;
+        }
+    };
+    match entry.get_password() {
+        Ok(password) => Some(password),
+        Err(keyring_core::Error::NoEntry) => {
+            debug!("keyring: no password stored for {username}");
+            None
+        }
+        Err(e) => {
+            warn!("keyring: cannot read password for {username}: {e}");
+            None
         }
     }
+}
+
+pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamAuthenticator>> {
+    let password = resolve_password(config);
 
     match config.auth_type.as_str() {
         "basic" => {
@@ -78,5 +99,20 @@ mod tests {
             ..Default::default()
         };
         assert!(create_authenticator(&config).is_some());
+    }
+
+    /// The configured password wins; the keyring is only consulted when enabled.
+    #[test]
+    fn resolve_password_prefers_config_and_respects_keyring_flag() {
+        let mut config = UpstreamConfig {
+            username: Some("user".into()),
+            password: Some("secret".into()),
+            use_keyring: true,
+            ..Default::default()
+        };
+        assert_eq!(resolve_password(&config).as_deref(), Some("secret"));
+        config.password = None;
+        config.use_keyring = false;
+        assert_eq!(resolve_password(&config), None);
     }
 }

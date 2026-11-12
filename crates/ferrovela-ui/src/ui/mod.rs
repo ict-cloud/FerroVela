@@ -21,7 +21,6 @@ pub fn run_ui() -> iced::Result {
             "FerroVela".to_string()
         }
     })
-    .theme(|app: &ConfigEditor, _: window::Id| app.appearance.clone())
     .subscription(ConfigEditor::subscription)
     .run()
 }

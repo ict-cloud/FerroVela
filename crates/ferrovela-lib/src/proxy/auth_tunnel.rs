@@ -60,7 +60,7 @@ async fn read_head_bytes(
         let old_len = buf.len();
         buf.extend_from_slice(&chunk[..n]);
 
-        let end = memchr::memmem::find(&buf, b"\r\n\r\n").map(|p| p + 4);
+        let end = buf.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4);
         buf.truncate(end.unwrap_or(buf.len()));
         // Consume exactly the bytes kept from this peek.
         stream.read_exact(&mut chunk[..buf.len() - old_len]).await?;
@@ -74,25 +74,16 @@ async fn read_head_bytes(
     }
 }
 
-/// Return the value of the `Proxy-Authenticate` header (first occurrence),
-/// e.g. `"NTLM"`, `"NTLM <base64>"`, `"Negotiate"`, `"Negotiate <base64>"`.
-///
-/// Returns a `&str` borrowed directly from `headers` — no heap allocation.
-fn find_proxy_authenticate(headers: &str) -> Option<&str> {
-    for line in headers.lines().skip(1) {
-        let trimmed = line.trim();
-        if trimmed.len() > 20 && trimmed[..20].eq_ignore_ascii_case("Proxy-Authenticate: ") {
-            return Some(trimmed[20..].trim());
-        }
-        // Handle "Proxy-Authenticate:" without trailing space
-        if let Some(rest) = trimmed
-            .strip_prefix("Proxy-Authenticate:")
-            .or_else(|| trimmed.strip_prefix("proxy-authenticate:"))
-        {
-            return Some(rest.trim());
-        }
-    }
-    None
+/// Find the value of the first header whose name matches `key`
+/// (case-insensitive), returning a borrowed `&str` into `headers`.
+pub fn find_header_value<'a>(headers: &'a str, key: &str) -> Option<&'a str> {
+    let key_len = key.len();
+    headers.lines().find_map(|line| {
+        (line.len() > key_len
+            && line.as_bytes()[key_len] == b':'
+            && line[..key_len].eq_ignore_ascii_case(key))
+        .then(|| line[key_len + 1..].trim())
+    })
 }
 
 /// Parse the HTTP status code from a response's first line.
@@ -109,54 +100,34 @@ fn parse_status(raw_response: &str) -> Option<u16> {
 /// Read the HTTP status line + headers and optionally drain the body
 /// (identified via `Content-Length`).  Returns
 /// `(status_code, Proxy-Authenticate value, proxy will close the connection)`.
-async fn read_proxy_response(
+pub(crate) async fn read_proxy_response(
     stream: &mut TcpStream,
 ) -> Result<(u16, Option<String>, bool), Box<dyn std::error::Error + Send + Sync>> {
     let raw = read_http_headers(stream).await?;
 
     let status = parse_status(&raw).ok_or("could not parse HTTP status")?;
-    // `find_proxy_authenticate` returns a `&str` into `raw`; convert to
-    // owned only once here, at the boundary where ownership is required.
-    let challenge = find_proxy_authenticate(&raw).map(str::to_owned);
+    // e.g. "NTLM", "NTLM <base64>", "Negotiate", "Negotiate <base64>".
+    let challenge = find_header_value(&raw, "Proxy-Authenticate").map(str::to_owned);
 
     // Drain body so the connection stays usable for the next request.
-    let content_length = crate::proxy::http_utils::parse_content_length(&raw);
+    let content_length = find_header_value(&raw, "Content-Length")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     if content_length > 0 {
         let mut body = vec![0u8; content_length];
         stream.read_exact(&mut body).await?;
     }
 
-    let close = ["Connection", "Proxy-Connection"].iter().any(|h| {
-        crate::proxy::http_utils::find_header_value(&raw, h)
-            .is_some_and(|v| v.eq_ignore_ascii_case("close"))
-    });
+    let close = ["Connection", "Proxy-Connection"]
+        .iter()
+        .any(|h| find_header_value(&raw, h).is_some_and(|v| v.eq_ignore_ascii_case("close")));
 
     Ok((status, challenge, close))
 }
 
-/// Send a `CONNECT target HTTP/1.1` request and return only the status code.
-/// Used by the rama CONNECT handler for the unauthenticated upstream path.
-pub(crate) async fn send_connect_request(
-    stream: &mut TcpStream,
-    target: &str,
-    proxy_authorization: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    send_connect(stream, target, proxy_authorization).await
-}
-
-/// Read a proxy CONNECT response and return only the status code.
-/// Used by the rama CONNECT handler for the unauthenticated upstream path.
-pub(crate) async fn read_connect_response(
-    stream: &mut TcpStream,
-) -> Result<u16, Box<dyn std::error::Error + Send + Sync>> {
-    read_proxy_response(stream)
-        .await
-        .map(|(status, _, _)| status)
-}
-
 /// Write a `CONNECT target HTTP/1.1` request, optionally adding a
 /// `Proxy-Authorization` header.
-async fn send_connect(
+pub(crate) async fn send_connect(
     stream: &mut TcpStream,
     target: &str,
     proxy_authorization: Option<&str>,
@@ -183,11 +154,13 @@ async fn send_connect(
 pub async fn perform_authenticated_connect(
     upstream_proxy: &str,
     target: &str,
-    authenticator: &Arc<dyn UpstreamAuthenticator>,
+    authenticator: Option<&Arc<dyn UpstreamAuthenticator>>,
 ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
-    let mut session = authenticator.create_session(proxy_host(upstream_proxy));
+    let mut session = authenticator.map(|a| a.create_session(proxy_host(upstream_proxy)));
     let mut upstream = TcpStream::connect(upstream_proxy).await?;
-    let _ = upstream.set_nodelay(true);
+    if let Err(e) = upstream.set_nodelay(true) {
+        debug!("set_nodelay failed: {}", e);
+    }
 
     // ── initial attempt without auth ─────────────────────────────────────
     send_connect(&mut upstream, target, None).await?;
@@ -198,6 +171,11 @@ pub async fn perform_authenticated_connect(
         debug!("upstream accepted CONNECT without auth");
         return Ok(upstream);
     }
+    let Some(session) = session.as_mut() else {
+        return Err(
+            format!("upstream proxy returned {status} and no credentials are configured").into(),
+        );
+    };
 
     // ── challenge-response loop ───────────────────────────────────────────
     // Max 4 iterations covers Kerberos (1) + NTLM (2) with headroom.
@@ -230,7 +208,9 @@ pub async fn perform_authenticated_connect(
         if close {
             debug!("round {round}: upstream closed connection, reconnecting");
             upstream = TcpStream::connect(upstream_proxy).await?;
-            let _ = upstream.set_nodelay(true);
+            if let Err(e) = upstream.set_nodelay(true) {
+                debug!("set_nodelay failed: {}", e);
+            }
         }
 
         send_connect(&mut upstream, target, Some(&auth_header)).await?;
@@ -279,29 +259,18 @@ mod tests {
     }
 
     #[test]
-    fn test_find_proxy_authenticate_ntlm() {
-        let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: NTLM\r\nContent-Length: 0\r\n\r\n";
-        assert_eq!(find_proxy_authenticate(headers), Some("NTLM"));
-    }
-
-    #[test]
-    fn test_find_proxy_authenticate_negotiate_with_token() {
-        let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Negotiate YIIGhg==\r\n\r\n";
-        assert_eq!(find_proxy_authenticate(headers), Some("Negotiate YIIGhg=="));
-    }
-
-    #[test]
-    fn test_find_proxy_authenticate_missing() {
-        let headers = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-        assert_eq!(find_proxy_authenticate(headers), None);
-    }
-
-    #[test]
-    fn test_find_proxy_authenticate_lowercase_header() {
-        let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nproxy-authenticate: Basic realm=\"proxy\"\r\n\r\n";
+    fn test_find_header_value() {
+        let headers = "HTTP/1.1 407 Proxy Authentication Required\r\nproxy-authenticate: Negotiate YIIGhg==\r\nContent-Length:42\r\nConnection: close\r\n\r\n";
         assert_eq!(
-            find_proxy_authenticate(headers),
-            Some("Basic realm=\"proxy\"")
+            find_header_value(headers, "Proxy-Authenticate"),
+            Some("Negotiate YIIGhg==")
+        );
+        assert_eq!(find_header_value(headers, "content-length"), Some("42"));
+        assert_eq!(find_header_value(headers, "Connection"), Some("close"));
+        assert_eq!(find_header_value(headers, "Proxy-Connection"), None);
+        assert_eq!(
+            find_header_value("Proxy-Authenticate: NTLM\r\n", "Proxy-Authenticate"),
+            Some("NTLM")
         );
     }
 

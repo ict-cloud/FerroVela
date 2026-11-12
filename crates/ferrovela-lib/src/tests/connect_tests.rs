@@ -5,7 +5,7 @@ use base64::Engine;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::auth::mock_kerberos::MockKerberosAuthenticator;
+use super::MockKerberosAuthenticator;
 use crate::auth::ntlm::NtlmAuthenticator;
 use crate::auth::UpstreamAuthenticator;
 use crate::proxy::auth_tunnel::{perform_authenticated_connect, read_http_headers};
@@ -95,8 +95,9 @@ async fn test_perform_authenticated_connect_direct_200() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
+    let result =
+        perform_authenticated_connect(&addr.to_string(), "example.com:443", Some(&auth)).await;
     assert!(result.is_ok());
 }
 
@@ -128,8 +129,9 @@ async fn test_perform_authenticated_connect_407_then_200() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
+    let result =
+        perform_authenticated_connect(&addr.to_string(), "example.com:443", Some(&auth)).await;
     assert!(result.is_ok());
 }
 
@@ -164,8 +166,9 @@ async fn test_perform_authenticated_connect_exhausted_407() {
         }
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
+    let result =
+        perform_authenticated_connect(&addr.to_string(), "example.com:443", Some(&auth)).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -256,7 +259,8 @@ async fn test_ntlm_uses_same_tcp_connection() {
         "WORKSTATION".into(),
     ));
 
-    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let result =
+        perform_authenticated_connect(&addr.to_string(), "example.com:443", Some(&auth)).await;
 
     assert!(result.is_ok(), "NTLM handshake failed: {:?}", result.err());
     assert_eq!(
@@ -293,8 +297,9 @@ async fn test_perform_authenticated_connect_unexpected_status() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
+    let result =
+        perform_authenticated_connect(&addr.to_string(), "example.com:443", Some(&auth)).await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("503"), "unexpected error: {err}");
@@ -336,8 +341,9 @@ async fn test_perform_authenticated_connect_407_with_body_and_close() {
         let _ = second.write_all(reply).await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
+    let result =
+        perform_authenticated_connect(&addr.to_string(), "example.com:443", Some(&auth)).await;
     assert!(result.is_ok(), "{:?}", result.err());
 }
 
@@ -357,11 +363,37 @@ async fn test_perform_authenticated_connect_keeps_payload_after_200() {
             .await;
     });
 
-    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
-    let mut upstream = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth)
-        .await
-        .unwrap();
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator);
+    let mut upstream =
+        perform_authenticated_connect(&addr.to_string(), "example.com:443", Some(&auth))
+            .await
+            .unwrap();
     let mut payload = Vec::new();
     upstream.read_to_end(&mut payload).await.unwrap();
     assert_eq!(payload, b"hello");
+}
+
+#[tokio::test]
+async fn test_perform_connect_without_credentials() {
+    // 200 passes straight through; a 407 with no credentials configured fails.
+    for (reply, ok) in [
+        (&b"HTTP/1.1 200 Connection established\r\n\r\n"[..], true),
+        (
+            &b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n"[..],
+            false,
+        ),
+    ] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut server, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 4096];
+            // The request is irrelevant here; a failed read just means no reply, which the assert catches.
+            let _ = server.read(&mut buf).await;
+            server.write_all(reply).await.unwrap();
+        });
+        let result =
+            perform_authenticated_connect(&addr.to_string(), "example.com:443", None).await;
+        assert_eq!(result.is_ok(), ok);
+    }
 }

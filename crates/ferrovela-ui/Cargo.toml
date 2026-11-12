@@ -28,3 +28,6 @@ keyring-core.workspace = true
 libc = "0.2"
 log.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+ferrovela-lib = { path = "../ferrovela-lib", features = ["test-prefs"] }

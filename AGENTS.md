@@ -51,7 +51,6 @@ The repository is a Cargo workspace with three crates:
         -   **`plain_http_handler`**: Handles all non-CONNECT requests — plain HTTP forwarding to upstream (with `Proxy-Authorization` for Basic auth) and direct plain HTTP.
     -   `auth_tunnel.rs`: Low-level authenticated CONNECT handshake (`perform_authenticated_connect`). Owns the multi-round 407 loop over a **single reused TCP connection** (required for stateful NTLM/Kerberos).
     -   `ssrf.rs`: Private-IP detection and SSRF guard.
-    -   `http_utils.rs`: HTTP parsing helpers.
 
 2.  **Authentication (`auth/`)**:
     -   **Architecture**: Uses an `AuthSession` trait to handle multi-step authentication handshakes (essential for NTLM and Negotiate).
@@ -162,7 +161,7 @@ Other keys: `proxy_allow_private_ips` (bool), `proxy_listen_ip` (string), `upstr
 -   **rquickjs & Async**: The `PacEngine` struct is the bridge between the async world and the synchronous, thread-local QuickJS runtime. Any new PAC functions must be added to `register_pac_functions` in `pac.rs`, which is called for the validation context and for every worker thread. Worker threads use `thread::Builder` with 8 MB stack size.
 -   **PAC Fetch**: Remote PAC files are fetched with `reqwest::Client::builder().no_proxy()` to ensure DIRECT connections.
 -   **rama extensions**: `ConnectRouting` is attached to the `UpgradeResponse` by `ConnectResponder` and read from the `Upgraded` connection's extensions by `ConnectHandler`. This avoids repeating PAC evaluation across the upgrade boundary.
--   **Tests and CFPreferences**: Tests that read or write preferences must hold `config::PREFS_LOCK`, since they share the real `com.ictcloud.ferrovela` domain.
+-   **Tests and CFPreferences**: Tests that read or write preferences must hold `config::PREFS_LOCK`. Test builds use the separate `com.ictcloud.ferrovela.test` domain, so tests never touch real settings: the library's own tests get it via `cfg(test)`, and other crates must enable the `test-prefs` feature of `ferrovela-lib` in their `[dev-dependencies]` (as `ferrovela-ui` does). `PREFS_LOCK` only exists in such builds.
 -   **NTLM connection reuse**: All three rounds of an NTLM handshake (Negotiate → Challenge → Authenticate) must share a single TCP connection. `perform_authenticated_connect` in `auth_tunnel.rs` enforces this.
 -   **Error Handling**: The application uses `anyhow` for error propagation and `log` for observability.
 
