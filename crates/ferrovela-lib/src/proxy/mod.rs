@@ -28,17 +28,6 @@ pub(crate) fn proxy_addr_from_url(proxy_url: &str) -> Option<String> {
 
 // ─── shared state threaded through rama's Context ─────────────────────────────
 
-/// Application state available to all rama service handlers.
-#[derive(Clone)]
-struct ProxyState {
-    config: Arc<Config>,
-    pac: Arc<Option<PacEngine>>,
-    authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
-    /// Pre-computed Base64 of `"user:pass"` for Basic upstream auth.
-    /// `None` when no Basic auth is configured.
-    basic_auth_b64: Option<Arc<str>>,
-}
-
 // ─── extension types stored in Context during the CONNECT upgrade ─────────────
 
 /// The resolved target and upstream proxy address, inserted by the CONNECT
@@ -65,7 +54,7 @@ struct ConnectRouting {
 #[derive(Clone)]
 struct ConnectResponder {
     config: Arc<Config>,
-    pac: Arc<Option<PacEngine>>,
+    pac: Option<PacEngine>,
 }
 
 impl rama::Service<rama::http::Request> for ConnectResponder {
@@ -122,7 +111,7 @@ impl rama::Service<rama::http::Request> for ConnectResponder {
 /// the upstream `TcpStream`.
 #[derive(Clone)]
 struct ConnectHandler {
-    state: ProxyState,
+    state: Proxy,
 }
 
 impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
@@ -190,7 +179,7 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
 ///   `Proxy-Authorization` for Basic auth.
 /// - No upstream (or exception) → direct connection in origin-form.
 async fn plain_http_handler(
-    state: ProxyState,
+    state: Proxy,
     mut req: rama::http::Request,
 ) -> Result<rama::http::Response, Infallible> {
     // ── Derive target host:port for proxy resolution ───────────────────
@@ -305,10 +294,14 @@ fn empty(status: rama::http::StatusCode) -> rama::http::Response {
 
 // ─── Proxy struct ─────────────────────────────────────────────────────────────
 
+/// The proxy and its per-connection state; cheap to clone.
+#[derive(Clone)]
 pub struct Proxy {
     config: Arc<Config>,
-    pac: Arc<Option<PacEngine>>,
+    pac: Option<PacEngine>,
     authenticator: Option<Arc<dyn UpstreamAuthenticator>>,
+    /// Pre-computed Base64 of `"user:pass"` for Basic upstream auth.
+    /// `None` when no Basic auth is configured.
     basic_auth_b64: Option<Arc<str>>,
 }
 
@@ -339,7 +332,7 @@ impl Proxy {
 
         Proxy {
             config,
-            pac: Arc::new(pac),
+            pac,
             authenticator,
             basic_auth_b64,
         }
@@ -354,14 +347,6 @@ impl Proxy {
     ///   direct TCP connect).
     /// - Everything else reaches [`plain_http_handler`] (plain HTTP forwarding).
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use rama::{
-            http::{layer::upgrade::UpgradeLayer, matcher::MethodMatcher, server::HttpServer},
-            rt::Executor,
-            service::service_fn,
-            tcp::server::TcpListener,
-            Layer,
-        };
-
         if self.config.proxy.listen_ip != "127.0.0.1" && !self.config.proxy.allow_private_ips {
             warn!(
                 "proxy_listen_ip={} is ignored because allow_private_ips is disabled; binding to 127.0.0.1",
@@ -373,55 +358,15 @@ impl Proxy {
             self.config.proxy.effective_listen_ip(),
             self.config.proxy.port
         );
-
-        let state = ProxyState {
-            config: Arc::clone(&self.config),
-            pac: Arc::clone(&self.pac),
-            authenticator: self.authenticator.clone(),
-            basic_auth_b64: self.basic_auth_b64.clone(),
-        };
-
-        let exec = Executor::default();
-
-        let connect_responder = ConnectResponder {
-            config: Arc::clone(&self.config),
-            pac: Arc::clone(&self.pac),
-        };
-        let connect_handler = ConnectHandler {
-            state: state.clone(),
-        };
-
-        let http_service = HttpServer::auto(exec.clone()).service(
-            UpgradeLayer::new_with_services(
-                exec.clone(),
-                MethodMatcher::CONNECT,
-                connect_responder,
-                connect_handler,
-            )
-            .into_layer(service_fn(move |req| {
-                plain_http_handler(state.clone(), req)
-            })),
-        );
-
+        let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
         info!("Listening on http://{}", listen_addr);
-
-        TcpListener::build(exec)
-            .bind_address(listen_addr)
-            .await?
-            .serve(http_service)
-            .await;
-
-        Ok(())
+        self.serve(listener).await
     }
 
-    /// Run the proxy on an already-bound listener.
-    ///
-    /// The full rama pipeline (HTTP parsing, CONNECT upgrade, SSRF guard, PAC,
-    /// authentication) applies exactly as in [`Proxy::run`].  The test suite
-    /// uses this variant so it can bind to port 0 and discover the actual port
-    /// before starting the proxy.
-    #[cfg(test)]
-    pub async fn run_with_listener(
+    /// Serve the proxy on an already-bound listener: rama's HTTP server with
+    /// the CONNECT upgrade pipeline in front of plain HTTP forwarding.  Tests
+    /// use this to bind port 0 and discover the port before serving.
+    pub async fn serve(
         &self,
         listener: tokio::net::TcpListener,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -433,23 +378,15 @@ impl Proxy {
             Layer,
         };
 
-        let state = ProxyState {
-            config: Arc::clone(&self.config),
-            pac: Arc::clone(&self.pac),
-            authenticator: self.authenticator.clone(),
-            basic_auth_b64: self.basic_auth_b64.clone(),
-        };
-
         let exec = Executor::default();
-
         let connect_responder = ConnectResponder {
             config: Arc::clone(&self.config),
-            pac: Arc::clone(&self.pac),
+            pac: self.pac.clone(),
         };
         let connect_handler = ConnectHandler {
-            state: state.clone(),
+            state: self.clone(),
         };
-
+        let state = self.clone();
         let http_service = HttpServer::auto(exec.clone()).service(
             UpgradeLayer::new_with_services(
                 exec.clone(),
@@ -462,11 +399,9 @@ impl Proxy {
             })),
         );
 
-        let std_listener = listener.into_std()?;
-        TcpListener::try_from_std_tcp_listener(std_listener, exec)?
+        TcpListener::try_from_std_tcp_listener(listener.into_std()?, exec)?
             .serve(http_service)
             .await;
-
         Ok(())
     }
 }
@@ -476,7 +411,7 @@ impl Proxy {
 pub async fn resolve_proxy(
     target: &str,
     config: &Arc<Config>,
-    pac: &Arc<Option<PacEngine>>,
+    pac: &Option<PacEngine>,
 ) -> Option<String> {
     let host = target.split(':').next().unwrap_or(target);
 
@@ -487,7 +422,7 @@ pub async fn resolve_proxy(
         }
     }
 
-    if let Some(pac_engine) = &**pac {
+    if let Some(pac_engine) = pac {
         let url = format!("https://{}/", target);
         match pac_engine.find_proxy(&url, host).await {
             Ok(proxy_str) => {
@@ -607,7 +542,7 @@ mod plain_http_tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_port = listener.local_addr().unwrap().port();
         let proxy = Proxy::new(Arc::new(config), None);
-        tokio::spawn(async move { proxy.run_with_listener(listener).await });
+        tokio::spawn(async move { proxy.serve(listener).await });
 
         let mut client = TcpStream::connect(("127.0.0.1", proxy_port)).await.unwrap();
         let req = format!(

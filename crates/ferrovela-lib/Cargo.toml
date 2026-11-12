@@ -13,6 +13,8 @@ rust-version.workspace = true
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "net", "io-util", "macros"] }
 log.workspace = true
+# rama logs accept errors via tracing; forward them to `log` (no subscriber is installed).
+tracing = { version = "0.1", features = ["log"] }
 anyhow.workspace = true
 rquickjs = { version = "0.14", features = ["bindgen"] }
 base64 = "0.23"
