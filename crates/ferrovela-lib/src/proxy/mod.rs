@@ -168,26 +168,23 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
                             if let Err(e) = upstream.set_nodelay(true) {
                                 debug!("set_nodelay failed: {}", e);
                             }
-                            if auth_tunnel::send_connect_request(&mut upstream, target, None)
-                                .await
-                                .is_ok()
+                            if let Err(e) =
+                                auth_tunnel::send_connect_request(&mut upstream, target, None).await
                             {
-                                match auth_tunnel::read_connect_response(&mut upstream).await {
-                                    Ok(200) => {
-                                        let _ = tokio::io::copy_bidirectional(
-                                            &mut upgraded,
-                                            &mut upstream,
-                                        )
-                                        .await;
-                                    }
-                                    Ok(status) => {
-                                        error!(
-                                            "upstream returned {} for CONNECT {}",
-                                            status, target
-                                        );
-                                    }
-                                    Err(e) => error!("upstream response for {}: {}", target, e),
+                                error!("send CONNECT {} to upstream {}: {}", target, addr, e);
+                                return Ok(());
+                            }
+                            match auth_tunnel::read_connect_response(&mut upstream).await {
+                                Ok(200) => {
+                                    let r =
+                                        tokio::io::copy_bidirectional(&mut upgraded, &mut upstream)
+                                            .await;
+                                    debug!("tunnel {} via {} closed: {:?}", target, addr, r);
                                 }
+                                Ok(status) => {
+                                    error!("upstream returned {} for CONNECT {}", status, target);
+                                }
+                                Err(e) => error!("upstream response for {}: {}", target, e),
                             }
                         }
                         Err(e) => error!("connect to upstream {}: {}", addr, e),
@@ -201,7 +198,8 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
                         if let Err(e) = upstream.set_nodelay(true) {
                             debug!("set_nodelay failed: {}", e);
                         }
-                        let _ = tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await;
+                        let r = tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await;
+                        debug!("direct tunnel {} closed: {:?}", target, r);
                     }
                     Err(e) => error!("direct connect to {}: {}", target, e),
                 }
@@ -266,12 +264,16 @@ async fn plain_http_handler(
                     return Ok(bad_gateway());
                 }
             }
-            if let Some(Ok(value)) = state
-                .basic_auth_b64
-                .as_deref()
-                .map(|b64| format!("Basic {b64}").parse())
-            {
-                req.headers_mut().insert("proxy-authorization", value);
+            if let Some(b64) = state.basic_auth_b64.as_deref() {
+                match format!("Basic {b64}").parse() {
+                    Ok(value) => {
+                        req.headers_mut().insert("proxy-authorization", value);
+                    }
+                    Err(e) => {
+                        error!("plain HTTP: invalid Proxy-Authorization value: {}", e);
+                        return Ok(bad_gateway());
+                    }
+                }
             }
             forward_plain_http(req, &upstream_addr).await
         }
