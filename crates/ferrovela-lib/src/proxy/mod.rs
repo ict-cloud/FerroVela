@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use log::{debug, error, info, warn};
+use rama::extensions::ExtensionsRef;
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -133,8 +134,6 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
         &self,
         mut upgraded: rama::http::layer::upgrade::Upgraded,
     ) -> Result<(), Infallible> {
-        use rama::extensions::ExtensionsRef;
-
         let state = &self.state;
 
         let routing = match upgraded.extensions().get_ref::<ConnectRouting>() {
@@ -166,7 +165,9 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
                     // Unauthenticated tunnel through upstream proxy.
                     match tokio::net::TcpStream::connect(&addr).await {
                         Ok(mut upstream) => {
-                            let _ = upstream.set_nodelay(true);
+                            if let Err(e) = upstream.set_nodelay(true) {
+                                debug!("set_nodelay failed: {}", e);
+                            }
                             if auth_tunnel::send_connect_request(&mut upstream, target, None)
                                 .await
                                 .is_ok()
@@ -197,7 +198,9 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
                 // Direct TCP connect.
                 match tokio::net::TcpStream::connect(target.as_str()).await {
                     Ok(mut upstream) => {
-                        let _ = upstream.set_nodelay(true);
+                        if let Err(e) = upstream.set_nodelay(true) {
+                            debug!("set_nodelay failed: {}", e);
+                        }
                         let _ = tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await;
                     }
                     Err(e) => error!("direct connect to {}: {}", target, e),
@@ -213,13 +216,12 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
 
 /// Handles plain (non-CONNECT) HTTP requests.
 ///
-/// - Upstream proxy configured → forward request, adding `Proxy-Authorization`
-///   for Basic auth.
-/// - No upstream (or exception) → direct connection, rewrites request to
-///   origin-form.
+/// - Upstream proxy configured → forward request in absolute-form, adding
+///   `Proxy-Authorization` for Basic auth.
+/// - No upstream (or exception) → direct connection in origin-form.
 async fn plain_http_handler(
     state: ProxyState,
-    req: rama::http::Request,
+    mut req: rama::http::Request,
 ) -> Result<rama::http::Response, Infallible> {
     // ── Derive target host:port for proxy resolution ───────────────────
     // §9: Access URI components directly without cloning the whole Uri.
@@ -251,13 +253,27 @@ async fn plain_http_handler(
         return Ok(bad_request());
     }
 
-    let resolved = resolve_proxy(&target, &state.config, &state.pac).await;
-
-    match resolved {
+    let result = match resolve_proxy(&target, &state.config, &state.pac).await {
         Some(proxy_url) => {
             let upstream_addr = auth_tunnel::normalize_proxy_addr(&proxy_url);
-            forward_plain_http_to_upstream(req, &upstream_addr, state.basic_auth_b64.as_deref())
-                .await
+            match format!("http://{upstream_addr}").parse() {
+                Ok(proxy) => {
+                    req.extensions()
+                        .insert(rama::net::client::ProxyRoute::Proxy(proxy));
+                }
+                Err(e) => {
+                    error!("plain HTTP: invalid upstream {}: {}", upstream_addr, e);
+                    return Ok(bad_gateway());
+                }
+            }
+            if let Some(Ok(value)) = state
+                .basic_auth_b64
+                .as_deref()
+                .map(|b64| format!("Basic {b64}").parse())
+            {
+                req.headers_mut().insert("proxy-authorization", value);
+            }
+            forward_plain_http(req, &upstream_addr).await
         }
         None => {
             // SSRF guard for plain HTTP direct connections.
@@ -265,159 +281,41 @@ async fn plain_http_handler(
                 warn!("SSRF blocked: plain HTTP to private address {}", target);
                 return Ok(forbidden());
             }
-            forward_plain_http_direct(req, &target).await
-        }
-    }
-}
-
-/// Forward a plain HTTP request to an upstream proxy, injecting Basic auth.
-///
-/// `basic_auth_b64` is the pre-computed Base64 of `"user:pass"` (from
-/// `ProxyState`); when `Some`, `Proxy-Authorization: Basic <b64>` is injected.
-async fn forward_plain_http_to_upstream(
-    req: rama::http::Request,
-    upstream_addr: &str,
-    basic_auth_b64: Option<&str>,
-) -> Result<rama::http::Response, Infallible> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let mut upstream = match tokio::net::TcpStream::connect(upstream_addr).await {
-        Ok(s) => {
-            let _ = s.set_nodelay(true);
-            s
-        }
-        Err(e) => {
-            error!("plain HTTP: connect to upstream {}: {}", upstream_addr, e);
-            return Ok(bad_gateway());
+            forward_plain_http(req, &target).await
         }
     };
 
-    // Serialize the request to wire format using the zero-allocation writer.
-    let mut raw = Vec::with_capacity(2048);
-    write_http_request(&mut raw, req, true, basic_auth_b64);
-
-    if upstream.write_all(&raw).await.is_err() {
-        return Ok(bad_gateway());
-    }
-
-    // 8 KiB initial capacity covers headers + most small response bodies
-    // without triggering the realloc-doubling cascade from Vec::new().
-    let mut buf = Vec::with_capacity(8 * 1024);
-    let _ = upstream.read_to_end(&mut buf).await;
-    parse_raw_response(buf)
+    Ok(result.unwrap_or_else(|e| {
+        error!("plain HTTP to {}: {}", target, e);
+        bad_gateway()
+    }))
 }
 
-/// Forward a plain HTTP request directly to the target server (origin-form).
-async fn forward_plain_http_direct(
-    req: rama::http::Request,
-    target: &str,
-) -> Result<rama::http::Response, Infallible> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let mut upstream = match tokio::net::TcpStream::connect(target).await {
-        Ok(s) => {
-            let _ = s.set_nodelay(true);
-            s
-        }
-        Err(e) => {
-            error!("plain HTTP: direct connect to {}: {}", target, e);
-            return Ok(bad_gateway());
-        }
-    };
-
-    let mut raw = Vec::with_capacity(2048);
-    write_http_request(&mut raw, req, false, None);
-
-    if upstream.write_all(&raw).await.is_err() {
-        return Ok(bad_gateway());
-    }
-
-    let mut buf = Vec::with_capacity(8 * 1024);
-    let _ = upstream.read_to_end(&mut buf).await;
-    parse_raw_response(buf)
-}
-
-/// Serialise a rama `Request` to HTTP/1.1 wire format, writing directly into
-/// the caller-supplied `Vec<u8>` via `extend_from_slice`.
+/// Send `req` over a fresh HTTP/1.1 connection to `addr` (upstream proxy or
+/// origin server) and stream the response back.
 ///
-/// - `absolute_form = true`  → absolute-form URI  (upstream proxy path)
-/// - `absolute_form = false` → origin-form path   (direct connection path)
-/// - `basic_auth_b64`        → when `Some`, appends `Proxy-Authorization: Basic <b64>\r\n`
-///
-/// No intermediate `String` allocations per header — all bytes are copied
-/// directly from rama's owned header map into `out`.
-fn write_http_request(
-    out: &mut Vec<u8>,
-    req: rama::http::Request,
-    absolute_form: bool,
-    basic_auth_b64: Option<&str>,
-) {
-    let (parts, _body) = req.into_parts();
-
-    // Request line
-    out.extend_from_slice(parts.method.as_str().as_bytes());
-    out.push(b' ');
-    if absolute_form {
-        out.extend_from_slice(parts.uri.to_string().as_bytes());
-    } else {
-        out.extend_from_slice(parts.uri.request_target().as_bytes());
+/// rama's encoder writes the request-target in origin-form, or in
+/// absolute-form when the request carries an HTTP `ProxyRoute` extension.
+async fn forward_plain_http(
+    mut req: rama::http::Request,
+    addr: &str,
+) -> Result<rama::http::Response, Box<dyn std::error::Error + Send + Sync>> {
+    let stream = tokio::net::TcpStream::connect(addr).await?;
+    if let Err(e) = stream.set_nodelay(true) {
+        debug!("plain HTTP: set_nodelay on {} failed: {}", addr, e);
     }
-    out.extend_from_slice(b" HTTP/1.1\r\n");
+    *req.version_mut() = rama::http::Version::HTTP_11;
 
-    // Headers — zero allocations: name and value bytes come from rama's map.
-    for (name, value) in &parts.headers {
-        if let Ok(v) = value.to_str() {
-            out.extend_from_slice(name.as_str().as_bytes());
-            out.extend_from_slice(b": ");
-            out.extend_from_slice(v.as_bytes());
-            out.extend_from_slice(b"\r\n");
+    let (mut sender, conn) =
+        rama::http::core::client::conn::http1::handshake(rama::tcp::TcpStream::from(stream))
+            .await?;
+    let peer = addr.to_owned();
+    tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            debug!("plain HTTP connection to {} ended: {}", peer, e);
         }
-    }
-
-    // Inject pre-computed Basic Proxy-Authorization if provided.
-    if let Some(b64) = basic_auth_b64 {
-        out.extend_from_slice(b"Proxy-Authorization: Basic ");
-        out.extend_from_slice(b64.as_bytes());
-        out.extend_from_slice(b"\r\n");
-    }
-
-    out.extend_from_slice(b"\r\n");
-}
-
-/// Parse a raw HTTP/1.1 response buffer into a rama `Response`.
-///
-/// §2: Uses `drain` to strip header bytes from `buf` in-place (a `memmove`
-/// within the existing allocation) rather than copying body bytes into a new
-/// `Vec` — eliminates one heap allocation per plain-HTTP response.
-fn parse_raw_response(mut buf: Vec<u8>) -> Result<rama::http::Response, Infallible> {
-    // Parse the status code from the first line (UTF-8 borrow, no allocation).
-    let status: u16 = {
-        let raw_str = String::from_utf8_lossy(&buf);
-        raw_str
-            .lines()
-            .next()
-            .and_then(|l| l.split_whitespace().nth(1))
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(502)
-        // `raw_str` borrow is released here before buf is mutated below.
-    };
-
-    let status_code =
-        rama::http::StatusCode::from_u16(status).unwrap_or(rama::http::StatusCode::BAD_GATEWAY);
-
-    // Locate the header/body boundary using SIMD-accelerated memmem.
-    let body_start = crate::proxy::http_utils::find_subsequence(&buf, b"\r\n\r\n")
-        .map(|p| p + 4)
-        .unwrap_or(buf.len());
-
-    // Drain header bytes in-place: body bytes shift to the front of `buf`
-    // (one memmove within the same allocation, no new Vec).
-    drop(buf.drain(..body_start));
-
-    Ok(rama::http::Response::builder()
-        .status(status_code)
-        .body(rama::http::Body::from(buf))
-        .unwrap())
+    });
+    Ok(sender.send_request(req).await?.map(rama::http::Body::new))
 }
 
 // ─── response helpers ─────────────────────────────────────────────────────────
@@ -495,8 +393,7 @@ impl Proxy {
     /// - `CONNECT` requests are intercepted by [`ConnectResponder`] (SSRF check,
     ///   PAC resolution) and handed off to [`ConnectHandler`] (auth tunnel or
     ///   direct TCP connect).
-    /// - Everything else reaches [`plain_http_handler`] (magic IPC, plain HTTP
-    ///   forwarding).
+    /// - Everything else reaches [`plain_http_handler`] (plain HTTP forwarding).
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         use rama::{
             http::{layer::upgrade::UpgradeLayer, matcher::MethodMatcher, server::HttpServer},
@@ -701,5 +598,86 @@ mod proxy_addr_tests {
     fn invalid_url_returns_none() {
         assert_eq!(proxy_addr_from_url("not a url"), None);
         assert_eq!(proxy_addr_from_url(""), None);
+    }
+}
+
+#[cfg(test)]
+mod plain_http_tests {
+    use super::*;
+    use crate::config::{ProxyConfig, UpstreamConfig};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    /// One-shot server: returns what it received, answers with a header + body.
+    async fn echo_server() -> (u16, tokio::task::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let mut n = 0;
+            while !String::from_utf8_lossy(&buf[..n]).ends_with("ping") {
+                n += sock.read(&mut buf[n..]).await.unwrap();
+            }
+            sock.write_all(b"HTTP/1.1 201 Created\r\nX-Test: yes\r\nContent-Length: 4\r\n\r\npong")
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&buf[..n]).into_owned()
+        });
+        (port, seen)
+    }
+
+    /// POST through the proxy; returns (request as seen by the server, response).
+    async fn roundtrip(upstream: bool) -> (String, String) {
+        let (port, seen) = echo_server().await;
+        let config = Config {
+            proxy: ProxyConfig {
+                allow_private_ips: true,
+                ..Default::default()
+            },
+            upstream: upstream.then(|| UpstreamConfig {
+                auth_type: "basic".into(),
+                username: Some("u".into()),
+                password: Some("p".into()),
+                use_keyring: false,
+                proxy_url: Some(format!("http://127.0.0.1:{port}")),
+                ..Default::default()
+            }),
+            exceptions: None,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_port = listener.local_addr().unwrap().port();
+        let proxy = Proxy::new(Arc::new(config), None);
+        tokio::spawn(async move { proxy.run_with_listener(listener).await });
+
+        let mut client = TcpStream::connect(("127.0.0.1", proxy_port)).await.unwrap();
+        let req = format!(
+            "POST http://127.0.0.1:{port}/x?y=1 HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 4\r\nConnection: close\r\n\r\nping"
+        );
+        client.write_all(req.as_bytes()).await.unwrap();
+        let mut resp = String::new();
+        client.read_to_string(&mut resp).await.unwrap();
+        (seen.await.unwrap().to_lowercase(), resp.to_lowercase())
+    }
+
+    #[tokio::test]
+    async fn plain_http_forwards_body_and_response_headers() {
+        let (seen, resp) = roundtrip(true).await;
+        assert!(seen.starts_with("post http://127.0.0.1:"), "{seen}");
+        assert!(seen.contains("/x?y=1 http/1.1"), "{seen}");
+        assert!(seen.contains("proxy-authorization: basic dtpw"), "{seen}");
+        assert!(resp.starts_with("http/1.1 201"), "{resp}");
+        assert!(
+            resp.contains("x-test: yes") && resp.ends_with("pong"),
+            "{resp}"
+        );
+
+        let (seen, resp) = roundtrip(false).await;
+        assert!(seen.starts_with("post /x?y=1 http/1.1"), "{seen}");
+        assert!(!seen.contains("proxy-authorization"), "{seen}");
+        assert!(
+            resp.starts_with("http/1.1 201") && resp.ends_with("pong"),
+            "{resp}"
+        );
     }
 }

@@ -187,7 +187,9 @@ pub async fn perform_authenticated_connect(
 ) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
     let mut session = authenticator.create_session(proxy_host(upstream_proxy));
     let mut upstream = TcpStream::connect(upstream_proxy).await?;
-    let _ = upstream.set_nodelay(true);
+    if let Err(e) = upstream.set_nodelay(true) {
+        debug!("set_nodelay failed: {}", e);
+    }
 
     // ── initial attempt without auth ─────────────────────────────────────
     send_connect(&mut upstream, target, None).await?;
@@ -230,7 +232,9 @@ pub async fn perform_authenticated_connect(
         if close {
             debug!("round {round}: upstream closed connection, reconnecting");
             upstream = TcpStream::connect(upstream_proxy).await?;
-            let _ = upstream.set_nodelay(true);
+            if let Err(e) = upstream.set_nodelay(true) {
+                debug!("set_nodelay failed: {}", e);
+            }
         }
 
         send_connect(&mut upstream, target, Some(&auth_header)).await?;
