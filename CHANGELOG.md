@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.9] - unreleased
 
 ### Fixed
 - **Kerberos CONNECT no longer fails with `early eof` behind PAC-selected proxies.** Kerberos no longer needs a static `proxy_url`: the Service Principal Name (`HTTP@<host>`) is derived per CONNECT from the proxy the PAC file selected. Previously PAC-only setups silently fell back to unauthenticated CONNECTs. Body bytes of a 407 that arrive together with its headers are now counted instead of being awaited again, and the authenticated retry reconnects when the proxy answers `407` with `Connection: close`. A non-Negotiate scheme listed first in `Proxy-Authenticate` is tolerated.
@@ -31,7 +31,42 @@
 ### Documentation
 - **README and AGENTS.md aligned with the code**: rama-based proxy core, the test preference domain, the current benchmarks and the Kerberos PAC behaviour.
 
-## [0.4.5] - unreleased
+## [0.4.8] - 2026-09-10
+
+### Changed
+- **rama and libgssapi upgraded.** Adapted to the API changes of both crates (`1e1473c`).
+
+### Fixed
+- **Keyring issues resolved** (`9e5085c`).
+
+### Removed
+- **Dead code removed (about 600 lines).** The `/__ferrovela/show` magic HTTP endpoint and its `ProxySignal` plumbing (the real "bring UI to front" path is the Unix socket in the UI). The orphaned raw-socket proxy engine, which production never ran, together with `ssrf_tests.rs`. The `connect_target_from_peek` helper and its tests. The `mock_kerberos` arm of `create_authenticator()`; the mock itself remains as a test double.
+
+### Maintenance
+- `cargo fmt` fixes (`9b9313a`).
+
+## [0.4.7] - 2026-05-20
+
+### Changed
+- **Improved launchctl behaviour** for starting and stopping the daemon service (`c758fad`).
+- Cargo lock file refreshed and code formatted with `cargo fmt`.
+
+### Maintenance
+- Version aligned with `master` after the release merge.
+
+## [0.4.6] - 2026-05-18
+
+### Added
+- **App bundle re-signing.** `scripts/resign.sh` re-signs `FerroVela.app` with a *Developer ID Application* certificate when one is in the keychain (`f18a484`).
+
+### Changed
+- **Extended entitlements.** The app bundle now also carries `allow-unsigned-executable-memory` (QuickJS JIT for PAC evaluation) and `disable-library-validation` (system Kerberos/GSSAPI libraries), with comments explaining each entry (`4c7018f`).
+- Dependencies updated with `cargo update`.
+
+### Fixed
+- Version number corrected in the workspace (`8d6ce9b`).
+
+## [0.4.5] - 2026-05-09
 
 ### Changed
 - **Keyring updated to 4.0.** `keyring` 4.0 split `Entry` into a separate `keyring-core` crate and requires an explicit credential store to be initialised at startup. Both binaries now call `keyring::use_native_store()` on launch; all `keyring::Entry` references updated to `keyring_core::Entry`.
@@ -98,6 +133,19 @@
 - Added log rotation to prevent the log file from growing without bound. The logger now tracks bytes written and rotates at 10 MiB: the current file moves to `ferrovela.log.1`, shifting any existing backups down, keeping up to three (`.1`–`.3`). The byte counter is seeded from the existing file size on startup so a process restart does not reset the threshold.
 - Hardened local PAC file path handling against path traversal. `PacEngine::new` now validates the path in two steps before reading any content: (1) a pre-canonicalization check rejects any path that contains a `..` component outright; (2) `std::fs::canonicalize` resolves the path to its absolute, symlink-free form and confirms it exists. The resolved path is additionally verified to be a regular file (not a directory, device node, or named pipe) before the content is read.
 
+## [0.4.0] - 2026-03-30
+
+### Changed
+- **Configuration moved to macOS preferences.** `config.json` was dropped; settings live in CFPreferences under `com.ictcloud.ferrovela` (`2010371`, `d1d0122`).
+- **Config split from the service.** The UI edits preferences and controls the daemon through launchd; the app bundle starts the service (`fd3b4f4`, `449700a`).
+- **Workspace refactored into three crates**: `ferrovela-lib` (proxy, auth, PAC, config), `ferrovela` (daemon) and `ferrovela-ui` (Iced GUI). The separate app crate was removed and the UI is no longer part of the library (`ebd17cc`, `bae8012`, `daa94f4`).
+
+### Fixed
+- Controller state handling in the UI (`455ceed`) and tests and benches on macOS (`c82765b`, `081fee6`).
+
+### Maintenance
+- Dependencies updated, GitHub Actions improved, and `cargo clippy` and `cargo fmt` applied.
+
 ## [0.4.1] - 31. Mar 2026
 
 ### Added
@@ -120,13 +168,13 @@
 - `musli` and `clap` dependencies (replaced by `core-foundation` / `core-foundation-sys`).
  
 
-## [0.3.4] - Unreleased
+## [0.3.4] - 2026-03-25
 
 ### Changed
 - Single-instance detection switched from a TCP magic request on the proxy port to a Unix domain socket (`/tmp/ferrovela-ui.sock`), decoupling UI lifecycle from proxy state.
 - Proxy service logs are now written to `~/Library/Logs/ferrovela.log`.
 
-## [0.3.3]
+## [0.3.3] - 2026-03-25
 
 ### Changed
 - Updated dependencies and removed unused ones.
