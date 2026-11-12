@@ -32,10 +32,6 @@ const MAX_HEADER_BYTES: usize = 64 * 1024;
 /// Read HTTP headers from `stream` until `\r\n\r\n`, returning the raw string
 /// (including the terminator).  Does **not** read any body bytes.
 ///
-/// Reads in chunks (up to 4 KiB) instead of byte-at-a-time to minimise
-/// syscall overhead.  In the CONNECT handshake context, each HTTP message
-/// arrives as a single write from the peer, so `read()` will return the
-/// complete headers without over-reading into tunnel payload.
 pub async fn read_http_headers(
     stream: &mut TcpStream,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -46,9 +42,10 @@ pub async fn read_http_headers(
         .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
 }
 
-/// Read from `stream` until the buffer contains `\r\n\r\n`.  The returned
-/// bytes may extend past the terminator: a proxy usually sends a 407 and its
-/// error body in one write, so callers must account for the over-read.
+/// Read from `stream` up to and including `\r\n\r\n`, and not a byte more.
+///
+/// Peeks before consuming so that whatever follows the headers — a 407 error
+/// body, or tunnel payload sent right behind a `200` — stays in the socket.
 async fn read_head_bytes(
     stream: &mut TcpStream,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
@@ -56,21 +53,25 @@ async fn read_head_bytes(
     let mut chunk = [0u8; 4096];
 
     loop {
-        let n = stream.read(&mut chunk).await?;
+        let n = stream.peek(&mut chunk).await?;
         if n == 0 {
             return Err("connection closed before end of headers".into());
         }
+        let old_len = buf.len();
         buf.extend_from_slice(&chunk[..n]);
 
-        if memchr::memmem::find(&buf, b"\r\n\r\n").is_some() {
-            break;
+        let end = memchr::memmem::find(&buf, b"\r\n\r\n").map(|p| p + 4);
+        buf.truncate(end.unwrap_or(buf.len()));
+        // Consume exactly the bytes kept from this peek.
+        stream.read_exact(&mut chunk[..buf.len() - old_len]).await?;
+
+        if end.is_some() {
+            return Ok(buf);
         }
         if buf.len() > MAX_HEADER_BYTES {
             return Err("HTTP headers exceeded maximum size".into());
         }
     }
-
-    Ok(buf)
 }
 
 /// Return the value of the `Proxy-Authenticate` header (first occurrence),
@@ -111,11 +112,7 @@ fn parse_status(raw_response: &str) -> Option<u16> {
 async fn read_proxy_response(
     stream: &mut TcpStream,
 ) -> Result<(u16, Option<String>, bool), Box<dyn std::error::Error + Send + Sync>> {
-    let buf = read_head_bytes(stream).await?;
-    let head_len = memchr::memmem::find(&buf, b"\r\n\r\n").map_or(buf.len(), |p| p + 4);
-    let raw = String::from_utf8_lossy(&buf[..head_len]);
-    // Body bytes that arrived in the same read as the headers.
-    let body_read = buf.len() - head_len;
+    let raw = read_http_headers(stream).await?;
 
     let status = parse_status(&raw).ok_or("could not parse HTTP status")?;
     // `find_proxy_authenticate` returns a `&str` into `raw`; convert to
@@ -124,8 +121,8 @@ async fn read_proxy_response(
 
     // Drain body so the connection stays usable for the next request.
     let content_length = crate::proxy::http_utils::parse_content_length(&raw);
-    if content_length > body_read {
-        let mut body = vec![0u8; content_length - body_read];
+    if content_length > 0 {
+        let mut body = vec![0u8; content_length];
         stream.read_exact(&mut body).await?;
     }
 

@@ -340,3 +340,28 @@ async fn test_perform_authenticated_connect_407_with_body_and_close() {
     let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
     assert!(result.is_ok(), "{:?}", result.err());
 }
+
+/// Bytes the upstream sends right behind its `200` belong to the tunnel and
+/// must still be readable from the returned stream.
+#[tokio::test]
+async fn test_perform_authenticated_connect_keeps_payload_after_200() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        let (mut server, _) = listener.accept().await.unwrap();
+        let mut buf = [0u8; 4096];
+        let _ = server.read(&mut buf).await;
+        let _ = server
+            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\nhello")
+            .await;
+    });
+
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let mut upstream = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth)
+        .await
+        .unwrap();
+    let mut payload = Vec::new();
+    upstream.read_to_end(&mut payload).await.unwrap();
+    assert_eq!(payload, b"hello");
+}
