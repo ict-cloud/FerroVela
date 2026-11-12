@@ -4,7 +4,7 @@ use rama::extensions::ExtensionsRef;
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use crate::auth::{create_authenticator, UpstreamAuthenticator};
+use crate::auth::{create_authenticator, resolve_password, UpstreamAuthenticator};
 use crate::config::Config;
 use crate::pac::PacEngine;
 
@@ -371,11 +371,11 @@ impl Proxy {
             .filter(|u| u.auth_type == "basic")
             .and_then(|u| {
                 let user = u.username.as_deref().unwrap_or("");
-                let pass = u.password.as_deref().unwrap_or("");
+                let pass = resolve_password(u).unwrap_or_default();
                 if user.is_empty() {
                     return None;
                 }
-                let encoded = base64::prelude::BASE64_STANDARD.encode(format!("{}:{}", user, pass));
+                let encoded = base64::prelude::BASE64_STANDARD.encode(format!("{user}:{pass}"));
                 Some(Arc::from(encoded.as_str()))
             });
 
