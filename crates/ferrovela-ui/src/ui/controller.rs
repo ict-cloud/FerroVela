@@ -105,9 +105,7 @@ impl ConfigEditor {
             Message::AdvancedUnlockResult(ok) => {
                 self.advanced_unlocked = ok;
                 if !ok {
-                    self.status = "Unlock cancelled.".to_string();
-                    self.status_is_error = false;
-                    self.status_timestamp = Some(std::time::Instant::now());
+                    self.set_status("Unlock cancelled.".to_string(), false);
                 }
                 Task::none()
             }
@@ -198,9 +196,7 @@ impl ConfigEditor {
         }
 
         if self.has_validation_errors() {
-            self.status = "Invalid input — settings not saved.".to_string();
-            self.status_is_error = true;
-            self.status_timestamp = Some(std::time::Instant::now());
+            self.set_status("Invalid input — settings not saved.".to_string(), true);
         } else {
             self.save_current_config();
         }
@@ -219,13 +215,11 @@ impl ConfigEditor {
                 Ok(()) => {
                     self.service_status = ServiceStatus::Running;
                     self.restart_needed = false;
-                    self.status = "Service started.".to_string();
-                    self.status_is_error = false;
+                    self.set_status("Service started.".to_string(), false);
                 }
                 Err(e) => {
                     error!("Failed to start service: {}", e);
-                    self.status = format!("Failed to start: {e}");
-                    self.status_is_error = true;
+                    self.set_status(format!("Failed to start: {e}"), true);
                 }
             }
         } else {
@@ -233,42 +227,34 @@ impl ConfigEditor {
                 Ok(()) => {
                     self.service_status = ServiceStatus::Stopped;
                     self.restart_needed = false;
-                    self.status = "Service stopped.".to_string();
-                    self.status_is_error = false;
+                    self.set_status("Service stopped.".to_string(), false);
                 }
                 Err(e) => {
                     error!("Failed to stop service: {}", e);
-                    self.status = format!("Failed to stop: {e}");
-                    self.status_is_error = true;
+                    self.set_status(format!("Failed to stop: {e}"), true);
                 }
             }
         }
-        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     fn handle_restart_service(&mut self) {
         if let Err(e) = launchd::stop() {
             error!("Failed to stop service during restart: {}", e);
-            self.status = format!("Failed to stop service: {e}");
-            self.status_is_error = true;
-            self.status_timestamp = Some(std::time::Instant::now());
+            self.set_status(format!("Failed to stop service: {e}"), true);
             return;
         }
         match launchd::start() {
             Ok(()) => {
                 self.service_status = ServiceStatus::Running;
                 self.restart_needed = false;
-                self.status = "Service restarted.".to_string();
-                self.status_is_error = false;
+                self.set_status("Service restarted.".to_string(), false);
             }
             Err(e) => {
                 error!("Failed to restart service: {}", e);
-                self.status = format!("Failed to restart: {e}");
-                self.status_is_error = true;
+                self.set_status(format!("Failed to restart: {e}"), true);
                 self.service_status = ServiceStatus::Stopped;
             }
         }
-        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     fn handle_window_message(&mut self, message: Message) -> Task<Message> {
@@ -398,19 +384,16 @@ impl ConfigEditor {
         let config = self.build_config();
         match save_config(&config) {
             Ok(_) => {
-                self.status = "Saved successfully!".to_string();
-                self.status_is_error = false;
+                self.set_status("Saved successfully!".to_string(), false);
                 if self.service_status == ServiceStatus::Running {
                     self.restart_needed = true;
                 }
                 self.sync_keyring();
             }
             Err(e) => {
-                self.status = format!("Error saving: {}", e);
-                self.status_is_error = true;
+                self.set_status(format!("Error saving: {}", e), true);
             }
         }
-        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     /// Writes or removes the password from the system keyring depending on
@@ -580,6 +563,15 @@ async fn peer_is_owner_accepts_same_user() {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+impl ConfigEditor {
+    /// Shows `msg` in the status bar; it fades after three seconds.
+    fn set_status(&mut self, msg: impl Into<String>, is_error: bool) {
+        self.status = msg.into();
+        self.status_is_error = is_error;
+        self.status_timestamp = Some(std::time::Instant::now());
+    }
+}
 
 fn validate_listen_ip(s: &str) -> Option<String> {
     let s = s.trim();
