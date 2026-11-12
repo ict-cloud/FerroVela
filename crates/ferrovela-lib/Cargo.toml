@@ -28,6 +28,10 @@ libc = "0.2"
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 
+[features]
+# Redirects preferences to the `com.ictcloud.ferrovela.test` domain; for dependants' tests only.
+test-prefs = []
+
 [dev-dependencies]
 criterion = { version = "0.8", features = ["async_tokio"] }
 tempfile = "3.25.0"
