@@ -31,7 +31,7 @@ impl NtlmAuthenticator {
 }
 
 impl UpstreamAuthenticator for NtlmAuthenticator {
-    fn create_session(&self) -> Box<dyn AuthSession> {
+    fn create_session(&self, _proxy_host: &str) -> Box<dyn AuthSession> {
         Box::new(NtlmSession {
             username: Arc::clone(&self.username),
             password: Arc::clone(&self.password),

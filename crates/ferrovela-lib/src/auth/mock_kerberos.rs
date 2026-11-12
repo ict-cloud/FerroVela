@@ -17,7 +17,7 @@ impl MockKerberosAuthenticator {
 }
 
 impl UpstreamAuthenticator for MockKerberosAuthenticator {
-    fn create_session(&self) -> Box<dyn AuthSession> {
+    fn create_session(&self, _proxy_host: &str) -> Box<dyn AuthSession> {
         Box::new(MockKerberosSession)
     }
 }

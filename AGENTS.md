@@ -150,10 +150,11 @@ cargo build --release
 
 ### Kerberos (MacOS First)
 - Implemented using `libgssapi` (GSSAPI wrapper).
-- **SPN Construction**: The Service Principal Name is derived from the upstream proxy hostname: `HTTP@<hostname>`.
+- **SPN Construction**: The Service Principal Name is derived per CONNECT from the upstream proxy actually selected (PAC result or static `proxy_url`): `HTTP@<hostname>`. No static `proxy_url` is required when a PAC file is used.
 - **Assumptions**:
     - The host machine has a valid Kerberos TGT (via `kinit` or domain login).
 - **Handshake**: Fully implemented via `AuthSession::step`. Handles `Negotiate` challenges.
+- **407 handling**: The 407 error body is drained (including bytes that arrive in the same read as the headers). If the proxy answers with `Connection: close` / `Proxy-Connection: close`, the authenticated retry opens a new TCP connection.
 
 ### NTLM
 - Implemented using `ntlmclient` crate.

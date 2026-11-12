@@ -8,7 +8,7 @@ use base64::Engine;
 #[test]
 fn test_basic_auth() {
     let auth = BasicAuthenticator::new("user".into(), "pass".into());
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
     let header = session.step(None).unwrap().unwrap();
     assert_eq!(header, "Basic dXNlcjpwYXNz"); // "dXNlcjpwYXNz" is "user:pass" base64 encoded
 }
@@ -16,7 +16,7 @@ fn test_basic_auth() {
 #[test]
 fn test_basic_authenticator_creates_session() {
     let auth = BasicAuthenticator::new("user".to_string(), "pass".to_string());
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
 
     let result = session.step(None).unwrap();
     assert_eq!(result, Some("Basic dXNlcjpwYXNz".to_string()));
@@ -25,7 +25,7 @@ fn test_basic_authenticator_creates_session() {
 #[test]
 fn test_basic_session_ignores_challenge() {
     let auth = BasicAuthenticator::new("admin".to_string(), "password123".to_string());
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
 
     let result = session.step(Some("Basic realm=\"Some Realm\"")).unwrap();
     assert_eq!(result, Some("Basic YWRtaW46cGFzc3dvcmQxMjM=".to_string()));
@@ -34,7 +34,7 @@ fn test_basic_session_ignores_challenge() {
 #[test]
 fn test_basic_session_empty_credentials() {
     let auth = BasicAuthenticator::new("".to_string(), "".to_string());
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
 
     let result = session.step(None).unwrap();
     assert_eq!(result, Some("Basic Og==".to_string()));
@@ -43,7 +43,7 @@ fn test_basic_session_empty_credentials() {
 #[test]
 fn test_mock_kerberos_auth() {
     let auth = MockKerberosAuthenticator::new();
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
     let header = session.step(None).unwrap().unwrap();
     assert_eq!(header, "Negotiate MockKerberosToken");
 }
@@ -52,8 +52,8 @@ fn test_mock_kerberos_auth() {
 fn test_kerberos_initialization() {
     // We can't fully test Kerberos without a KDC, but we can test that initialization attempts to proceed.
     // In this environment, it should fail gracefully (e.g., due to missing credentials or configuration).
-    let auth = KerberosAuthenticator::new("proxy.example.com");
-    let mut session = auth.create_session();
+    let auth = KerberosAuthenticator;
+    let mut session = auth.create_session("proxy.example.com");
     let res = session.step(None);
 
     // We expect an error because GSSAPI won't work in the sandbox without kinit
@@ -73,7 +73,7 @@ fn test_ntlm_initialization() {
         "DOMAIN".into(),
         "WORKSTATION".into(),
     );
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
 
     // Step 1: Negotiate
     let header = session.step(None).unwrap().unwrap();
@@ -92,7 +92,7 @@ fn test_ntlm_invalid_challenge() {
         "DOMAIN".into(),
         "WORKSTATION".into(),
     );
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
 
     // Step 1: Negotiate - this advances state to Challenge
     let res1 = session.step(None);
@@ -140,7 +140,7 @@ fn test_ntlm_full_handshake() {
         "DOMAIN".into(),
         "WORKSTATION".into(),
     );
-    let mut session = auth.create_session();
+    let mut session = auth.create_session("proxy.example.com");
 
     // Step 1: Negotiate — produces a Type 1 message
     let negotiate = session.step(None).unwrap().unwrap();

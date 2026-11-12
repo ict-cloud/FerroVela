@@ -299,3 +299,44 @@ async fn test_perform_authenticated_connect_unexpected_status() {
     let err = result.unwrap_err().to_string();
     assert!(err.contains("503"), "unexpected error: {err}");
 }
+
+/// Regression: the proxy sends the 407 headers and its error body in one
+/// write and then closes the connection (`Connection: close`).  The body must
+/// not be awaited a second time ("early eof") and the authenticated retry
+/// must use a new connection.
+#[tokio::test]
+async fn test_perform_authenticated_connect_407_with_body_and_close() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        let mut buf = [0u8; 4096];
+
+        let (mut first, _) = listener.accept().await.unwrap();
+        let _ = first.read(&mut buf).await;
+        let _ = first
+            .write_all(
+                b"HTTP/1.1 407 Proxy Authentication Required\r\n\
+                  Proxy-Authenticate: NTLM\r\n\
+                  Proxy-Authenticate: Negotiate\r\n\
+                  Connection: close\r\n\
+                  Content-Length: 11\r\n\r\nauth needed",
+            )
+            .await;
+        drop(first);
+
+        let (mut second, _) = listener.accept().await.unwrap();
+        let n = second.read(&mut buf).await.unwrap();
+        let req = String::from_utf8_lossy(&buf[..n]);
+        let reply: &[u8] = if req.contains("Proxy-Authorization: Negotiate ") {
+            b"HTTP/1.1 200 Connection established\r\n\r\n"
+        } else {
+            b"HTTP/1.1 403 Forbidden\r\n\r\n"
+        };
+        let _ = second.write_all(reply).await;
+    });
+
+    let auth: Arc<dyn UpstreamAuthenticator> = Arc::new(MockKerberosAuthenticator::new());
+    let result = perform_authenticated_connect(&addr.to_string(), "example.com:443", &auth).await;
+    assert!(result.is_ok(), "{:?}", result.err());
+}

@@ -154,8 +154,9 @@ impl rama::Service<rama::http::layer::upgrade::Upgraded> for ConnectHandler {
                     // Authenticated tunnel (NTLM, Kerberos, Basic).
                     match auth_tunnel::perform_authenticated_connect(&addr, target, auth).await {
                         Ok(mut upstream) => {
-                            let _ =
+                            let r =
                                 tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await;
+                            debug!("tunnel {} via {} closed: {:?}", target, addr, r);
                         }
                         Err(e) => {
                             error!("auth tunnel to {} via {}: {}", target, addr, e);

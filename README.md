@@ -58,6 +58,8 @@ To use Kerberos authentication:
 3. FerroVela will automatically use the cached credentials (TGT) to authenticate with the upstream proxy using SPNEGO.
 
 > In the GUI, selecting *Kerberos* hides the password field — no password is required or stored.
+>
+> `upstream_proxy_url` is optional when a PAC file is configured: the Kerberos service name (`HTTP@<proxy host>`) is derived from the proxy the PAC file selects for each request.
 
 ```bash
 defaults write com.ictcloud.ferrovela upstream_auth_type -string "kerberos"
