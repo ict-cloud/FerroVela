@@ -18,12 +18,15 @@ closes that gap.
      `github.sha`. If unchanged, the job stops without touching `dev`.
    - If changed, fetches `dev` and checks whether it already contains the new
      `master` head. If so, it stops.
-   - Otherwise it runs `git merge --no-edit <master sha>` on `dev` and pushes
-     `dev` with `GITHUB_TOKEN`.
+   - Otherwise it builds `sync/master-X.Y.Z` from `dev`, merges the `master`
+     commit into it, and force-pushes that branch (it is bot-owned).
+   - It opens a PR `sync/master-X.Y.Z` → `dev` (skipped if one is already open)
+     and enables auto-merge.
 
-Result: `dev` contains every commit from `master`. When `dev` has no commits of
-its own, the merge is a fast-forward and the two branches point at the same
-commit.
+`dev` is protected ("changes must be made through a pull request"), so the
+workflow never pushes to `dev` directly. The PR merges once the branch rules
+are met (required checks and approvals). When `dev` has no commits of its own,
+the merge is a fast-forward, so the PR is just the bump commit.
 
 ## Behaviour and limits
 
@@ -34,10 +37,14 @@ commit.
 - **Conflicts**: if the merge conflicts (for example, `dev` also edited the
   `version` line or `Cargo.lock`), the job fails and nothing is pushed. Resolve
   the merge on `dev` manually.
-- **Branch protection**: `GITHUB_TOKEN` must be allowed to push to `dev`. If
-  `dev` is protected, grant the Actions bot bypass rights or the push will fail.
-- **Pushes made with `GITHUB_TOKEN` do not trigger other workflows**, so the
-  sync push to `dev` does not start the test workflow there.
+- **Auto-merge** requires "Allow auto-merge" in the repository settings. If it
+  is off, the job still succeeds, emits a warning, and the PR must be merged by
+  hand.
+- **Approvals**: if `dev` requires an approving review, auto-merge waits for
+  one. The bot does not approve its own PR.
+- **Triggering**: PRs opened by `GITHUB_TOKEN` do not start other workflows
+  except `pull_request` ones; `test.yaml` runs on PRs into `dev`, so this is
+  covered as long as that holds for your repository.
 - **Cargo.lock**: `bump-version.yaml` edits only `Cargo.toml`. The lock file's
   workspace entries are refreshed on the next `cargo build` and are not part of
   this sync.

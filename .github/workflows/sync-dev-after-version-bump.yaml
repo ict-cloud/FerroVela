@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,7 +53,10 @@ jobs:
             echo "No version change, nothing to sync."
           fi
 
-      - name: Merge master into dev
+      # dev is protected (changes must go through a PR), so build the sync on a
+      # branch and open a PR instead of pushing to dev.
+      - name: Build sync branch from dev + master
+        id: branch
         if: steps.check.outputs.bumped == 'true'
         env:
           AFTER: ${{ github.sha }}
@@ -62,17 +66,47 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git fetch origin dev
-          git checkout -B dev origin/dev
-
-          if git merge-base --is-ancestor "$AFTER" dev; then
+          if git merge-base --is-ancestor "$AFTER" origin/dev; then
             echo "dev already contains $AFTER, nothing to do."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Fails loudly on conflicts; resolve manually on dev in that case.
+          BRANCH="sync/master-${NEW_VERSION}"
+          git checkout -B "$BRANCH" origin/dev
+          # Fails loudly on conflicts; resolve manually in that case.
           git merge --no-edit -m "chore: sync master ${NEW_VERSION} into dev" "$AFTER"
-          git push origin dev
+          git push --force origin "HEAD:refs/heads/$BRANCH"
+
+          echo "needed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Open PR into dev and enable auto-merge
+        if: steps.branch.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh pr list --head "$BRANCH" --base dev --state open --json number --jq '.[0].number')
+          if [ -z "$EXISTING" ]; then
+            gh pr create --base dev --head "$BRANCH" \
+              --title "chore: sync master ${NEW_VERSION} into dev" \
+              --body "Automated sync of the version bump ${NEW_VERSION} from master into dev."
+          fi
+          # Merges once the branch rules are satisfied (checks/approvals).
+          # Needs "Allow auto-merge" enabled in the repository settings.
+          gh pr merge "$BRANCH" --auto --merge \
+            || echo "::warning::Could not enable auto-merge; merge the sync PR for $BRANCH manually."
 
       - name: Summary
         if: steps.check.outputs.bumped == 'true'
-        run: echo "Synced master ${NEW_VERSION} into dev." >> "$GITHUB_STEP_SUMMARY"
+        env:
+          NEEDED: ${{ steps.branch.outputs.needed }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          if [ "$NEEDED" = "true" ]; then
+            echo "Opened sync PR from $BRANCH into dev for master ${NEW_VERSION}." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "dev already contains master ${NEW_VERSION}; no PR needed." >> "$GITHUB_STEP_SUMMARY"
+          fi
