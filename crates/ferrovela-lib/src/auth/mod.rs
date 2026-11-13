@@ -1,15 +1,16 @@
 use crate::config::UpstreamConfig;
 use anyhow::Result;
+use log::{debug, warn};
 
 pub mod basic;
 pub mod kerberos;
-pub mod mock_kerberos;
 pub mod ntlm;
 
 /// Trait for upstream authentication factory.
 pub trait UpstreamAuthenticator: Send + Sync {
-    /// Creates a new authentication session.
-    fn create_session(&self) -> Box<dyn AuthSession>;
+    /// Creates a new authentication session for the upstream proxy
+    /// `proxy_host` (bare hostname; Kerberos derives its SPN from it).
+    fn create_session(&self, proxy_host: &str) -> Box<dyn AuthSession>;
 }
 
 /// Trait for an authentication session.
@@ -21,17 +22,38 @@ pub trait AuthSession: Send {
     fn step(&mut self, challenge: Option<&str>) -> Result<Option<String>>;
 }
 
-pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamAuthenticator>> {
-    let mut password = config.password.clone();
-    if config.use_keyring && password.is_none() {
-        if let Some(username) = &config.username {
-            if let Ok(entry) = keyring_core::Entry::new("ferrovela", username) {
-                if let Ok(pw) = entry.get_password() {
-                    password = Some(pw);
-                }
-            }
+/// The upstream password: the configured one, or else the keyring entry for
+/// the username when keyring storage is enabled.
+pub fn resolve_password(config: &UpstreamConfig) -> Option<String> {
+    if let Some(password) = &config.password {
+        return Some(password.clone());
+    }
+    if !config.use_keyring {
+        return None;
+    }
+    let username = config.username.as_deref()?;
+    let entry = match keyring_core::Entry::new("ferrovela", username) {
+        Ok(entry) => entry,
+        Err(e) => {
+            warn!("keyring: cannot open entry for {username}: {e}");
+            return None;
+        }
+    };
+    match entry.get_password() {
+        Ok(password) => Some(password),
+        Err(keyring_core::Error::NoEntry) => {
+            debug!("keyring: no password stored for {username}");
+            None
+        }
+        Err(e) => {
+            warn!("keyring: cannot read password for {username}: {e}");
+            None
         }
     }
+}
+
+pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamAuthenticator>> {
+    let password = resolve_password(config);
 
     match config.auth_type.as_str() {
         "basic" => {
@@ -44,23 +66,9 @@ pub fn create_authenticator(config: &UpstreamConfig) -> Option<Box<dyn UpstreamA
                 None
             }
         }
-        "kerberos" => {
-            if let Some(proxy_url) = &config.proxy_url {
-                // `host_str()` strips brackets from IPv6 literals and userinfo,
-                // giving the bare hostname that the GSS-API SPN expects.
-                let host = url::Url::parse(proxy_url)
-                    .ok()
-                    .and_then(|u| u.host_str().map(str::to_owned))
-                    .unwrap_or_default();
-                if host.is_empty() {
-                    None
-                } else {
-                    Some(Box::new(kerberos::KerberosAuthenticator::new(&host)))
-                }
-            } else {
-                None
-            }
-        }
+        // No proxy_url needed: with a PAC file the proxy is chosen per request
+        // and the SPN is derived from it in `create_session`.
+        "kerberos" => Some(Box::new(kerberos::KerberosAuthenticator)),
         "ntlm" => {
             if let (Some(u), Some(p)) = (&config.username, &password) {
                 Some(Box::new(ntlm::NtlmAuthenticator::new(
@@ -82,44 +90,29 @@ mod tests {
     use super::*;
     use crate::config::UpstreamConfig;
 
-    fn kerberos_config(proxy_url: &str) -> UpstreamConfig {
-        UpstreamConfig {
+    /// PAC-only setups have no static `proxy_url`; Kerberos must still be
+    /// enabled, otherwise CONNECTs go upstream unauthenticated.
+    #[test]
+    fn kerberos_does_not_require_proxy_url() {
+        let config = UpstreamConfig {
             auth_type: "kerberos".to_string(),
-            proxy_url: Some(proxy_url.to_string()),
             ..Default::default()
-        }
+        };
+        assert!(create_authenticator(&config).is_some());
     }
 
+    /// The configured password wins; the keyring is only consulted when enabled.
     #[test]
-    fn kerberos_extracts_hostname() {
-        let auth = create_authenticator(&kerberos_config("http://proxy.corp.com:8080"));
-        assert!(auth.is_some());
-    }
-
-    #[test]
-    fn kerberos_strips_userinfo() {
-        // Userinfo must not appear in the GSS-API SPN.
-        // create_authenticator returns Some as long as host is non-empty;
-        // the SPN is built inside KerberosAuthenticator::new, which we verify
-        // by checking the service_name via a round-trip through the struct.
-        let auth = create_authenticator(&kerberos_config("http://user:pass@proxy.corp.com:8080"));
-        assert!(auth.is_some(), "should construct authenticator");
-    }
-
-    #[test]
-    fn kerberos_ipv6_host_has_no_brackets() {
-        // GSS-API SPN must be "HTTP@::1", not "HTTP@[::1]".
-        // Constructing with brackets would produce an invalid service name.
-        let auth = create_authenticator(&kerberos_config("http://[::1]:8080"));
-        assert!(
-            auth.is_some(),
-            "should construct authenticator for IPv6 proxy"
-        );
-    }
-
-    #[test]
-    fn kerberos_invalid_url_returns_none() {
-        let auth = create_authenticator(&kerberos_config("not a url"));
-        assert!(auth.is_none());
+    fn resolve_password_prefers_config_and_respects_keyring_flag() {
+        let mut config = UpstreamConfig {
+            username: Some("user".into()),
+            password: Some("secret".into()),
+            use_keyring: true,
+            ..Default::default()
+        };
+        assert_eq!(resolve_password(&config).as_deref(), Some("secret"));
+        config.password = None;
+        config.use_keyring = false;
+        assert_eq!(resolve_password(&config), None);
     }
 }

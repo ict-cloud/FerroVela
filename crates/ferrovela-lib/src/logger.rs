@@ -183,10 +183,6 @@ pub fn init_to(path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Syn
     Ok(())
 }
 
-pub fn init() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    init_to(Path::new("service.log"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

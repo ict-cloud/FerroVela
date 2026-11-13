@@ -20,7 +20,7 @@ fn benchmark_connect_v2(c: &mut Criterion) {
             upstream: None,
             exceptions: None,
         });
-        let pac = Arc::new(None);
+        let pac = None;
 
         b.to_async(tokio::runtime::Runtime::new().unwrap())
             .iter(|| async {
@@ -51,7 +51,7 @@ fn benchmark_connect_v2(c: &mut Criterion) {
                 "*.internal".to_string(),
             ])),
         });
-        let pac = Arc::new(None);
+        let pac = None;
 
         b.to_async(tokio::runtime::Runtime::new().unwrap())
             .iter(|| async {
@@ -79,7 +79,7 @@ fn benchmark_connect_v2(c: &mut Criterion) {
             }),
             exceptions: None,
         });
-        let pac = Arc::new(None);
+        let pac = None;
 
         b.to_async(tokio::runtime::Runtime::new().unwrap())
             .iter(|| async {

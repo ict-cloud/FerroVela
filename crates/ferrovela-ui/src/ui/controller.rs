@@ -1,4 +1,4 @@
-use iced::{window, Subscription, Task, Theme};
+use iced::{window, Subscription, Task};
 use log::error;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Duration;
@@ -66,12 +66,6 @@ impl ConfigEditor {
                 ServiceStatus::Stopped
             },
             restart_needed: false,
-            appearance: if system_prefers_dark() {
-                Theme::Dark
-            } else {
-                Theme::Light
-            },
-            show_logs: false,
             log_content: String::new(),
             log_search: String::new(),
             main_window_id: Some(main_window_id),
@@ -110,9 +104,7 @@ impl ConfigEditor {
             Message::AdvancedUnlockResult(ok) => {
                 self.advanced_unlocked = ok;
                 if !ok {
-                    self.status = "Unlock cancelled.".to_string();
-                    self.status_is_error = false;
-                    self.status_timestamp = Some(std::time::Instant::now());
+                    self.set_status("Unlock cancelled.".to_string(), false);
                 }
                 Task::none()
             }
@@ -144,11 +136,6 @@ impl ConfigEditor {
                     ServiceStatus::Running
                 } else {
                     ServiceStatus::Stopped
-                };
-                self.appearance = if system_prefers_dark() {
-                    Theme::Dark
-                } else {
-                    Theme::Light
                 };
                 if let Some(ts) = self.status_timestamp {
                     if ts.elapsed() >= Duration::from_secs(3) {
@@ -208,9 +195,7 @@ impl ConfigEditor {
         }
 
         if self.has_validation_errors() {
-            self.status = "Invalid input — settings not saved.".to_string();
-            self.status_is_error = true;
-            self.status_timestamp = Some(std::time::Instant::now());
+            self.set_status("Invalid input — settings not saved.".to_string(), true);
         } else {
             self.save_current_config();
         }
@@ -229,13 +214,11 @@ impl ConfigEditor {
                 Ok(()) => {
                     self.service_status = ServiceStatus::Running;
                     self.restart_needed = false;
-                    self.status = "Service started.".to_string();
-                    self.status_is_error = false;
+                    self.set_status("Service started.".to_string(), false);
                 }
                 Err(e) => {
                     error!("Failed to start service: {}", e);
-                    self.status = format!("Failed to start: {e}");
-                    self.status_is_error = true;
+                    self.set_status(format!("Failed to start: {e}"), true);
                 }
             }
         } else {
@@ -243,42 +226,34 @@ impl ConfigEditor {
                 Ok(()) => {
                     self.service_status = ServiceStatus::Stopped;
                     self.restart_needed = false;
-                    self.status = "Service stopped.".to_string();
-                    self.status_is_error = false;
+                    self.set_status("Service stopped.".to_string(), false);
                 }
                 Err(e) => {
                     error!("Failed to stop service: {}", e);
-                    self.status = format!("Failed to stop: {e}");
-                    self.status_is_error = true;
+                    self.set_status(format!("Failed to stop: {e}"), true);
                 }
             }
         }
-        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     fn handle_restart_service(&mut self) {
         if let Err(e) = launchd::stop() {
             error!("Failed to stop service during restart: {}", e);
-            self.status = format!("Failed to stop service: {e}");
-            self.status_is_error = true;
-            self.status_timestamp = Some(std::time::Instant::now());
+            self.set_status(format!("Failed to stop service: {e}"), true);
             return;
         }
         match launchd::start() {
             Ok(()) => {
                 self.service_status = ServiceStatus::Running;
                 self.restart_needed = false;
-                self.status = "Service restarted.".to_string();
-                self.status_is_error = false;
+                self.set_status("Service restarted.".to_string(), false);
             }
             Err(e) => {
                 error!("Failed to restart service: {}", e);
-                self.status = format!("Failed to restart: {e}");
-                self.status_is_error = true;
+                self.set_status(format!("Failed to restart: {e}"), true);
                 self.service_status = ServiceStatus::Stopped;
             }
         }
-        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     fn handle_window_message(&mut self, message: Message) -> Task<Message> {
@@ -296,7 +271,7 @@ impl ConfigEditor {
             Message::OpenLogsAt(pos) if self.log_window_id.is_none() => {
                 return self.open_log_window(pos);
             }
-            Message::Tick if (self.show_logs || self.log_window_id.is_some()) => {
+            Message::Tick if self.log_window_id.is_some() => {
                 self.load_logs();
                 return iced::widget::operation::snap_to_end(iced::widget::Id::new(
                     "ferrovela_log_scroll",
@@ -318,7 +293,6 @@ impl ConfigEditor {
             Message::WindowClosed(id) => {
                 if Some(id) == self.log_window_id {
                     self.log_window_id = None;
-                    self.show_logs = false;
                 } else if Some(id) == self.main_window_id {
                     self.main_window_id = None;
                     let _ = std::fs::remove_file(launchd::ui_socket_path());
@@ -328,7 +302,6 @@ impl ConfigEditor {
             Message::WindowCloseRequested(id) => {
                 if Some(id) == self.log_window_id {
                     self.log_window_id = None;
-                    self.show_logs = false;
                 }
                 return window::close(id);
             }
@@ -349,11 +322,7 @@ impl ConfigEditor {
     fn build_config(&self) -> Config {
         let port = self.proxy_port.parse().unwrap_or(default_port());
 
-        let pac_file = if self.pac_file.trim().is_empty() {
-            None
-        } else {
-            Some(self.pac_file.trim().to_string())
-        };
+        let pac_file = non_empty_trimmed(&self.pac_file);
 
         let upstream = if self.upstream_auth_type == AuthType::None
             && self.upstream_username.is_empty()
@@ -408,19 +377,16 @@ impl ConfigEditor {
         let config = self.build_config();
         match save_config(&config) {
             Ok(_) => {
-                self.status = "Saved successfully!".to_string();
-                self.status_is_error = false;
+                self.set_status("Saved successfully!".to_string(), false);
                 if self.service_status == ServiceStatus::Running {
                     self.restart_needed = true;
                 }
                 self.sync_keyring();
             }
             Err(e) => {
-                self.status = format!("Error saving: {}", e);
-                self.status_is_error = true;
+                self.set_status(format!("Error saving: {}", e), true);
             }
         }
-        self.status_timestamp = Some(std::time::Instant::now());
     }
 
     /// Writes or removes the password from the system keyring depending on
@@ -465,7 +431,6 @@ impl ConfigEditor {
         self.log_window_id = Some(id);
         self.log_content = String::new();
         self.load_logs();
-        self.show_logs = true;
         open_task.map(|_| Message::Tick)
     }
 
@@ -489,7 +454,7 @@ impl ConfigEditor {
     // -----------------------------------------------------------------------
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let tick = if self.show_logs || self.log_window_id.is_some() {
+        let tick = if self.log_window_id.is_some() {
             iced::time::every(Duration::from_millis(500)).map(|_| Message::Tick)
         } else {
             Subscription::none()
@@ -568,33 +533,36 @@ fn ui_show_stream() -> impl iced::futures::Stream<Item = Message> {
 }
 
 /// Returns `true` when the peer on `stream` has the same effective UID as the
-/// current process.  Uses `getpeereid(2)`, which is available on macOS/BSD.
+/// current process.  Fails closed when the peer credentials cannot be read.
 fn peer_is_owner(stream: &tokio::net::UnixStream) -> bool {
-    use std::os::unix::io::AsRawFd;
-    let fd = stream.as_raw_fd();
-    let mut peer_uid: libc::uid_t = libc::uid_t::MAX;
-    let mut peer_gid: libc::gid_t = libc::gid_t::MAX;
-    // SAFETY: fd is valid for the lifetime of this call; pointers are stack-allocated.
-    if unsafe { libc::getpeereid(fd, &mut peer_uid, &mut peer_gid) } != 0 {
-        log::debug!("getpeereid failed: {}", std::io::Error::last_os_error());
-        return false;
+    match stream.peer_cred() {
+        // SAFETY: geteuid() is always safe to call.
+        Ok(cred) => cred.uid() == unsafe { libc::geteuid() },
+        Err(e) => {
+            log::debug!("reading peer credentials failed: {e}");
+            false
+        }
     }
-    // SAFETY: geteuid() is always safe to call.
-    let own_uid = unsafe { libc::geteuid() };
-    peer_uid == own_uid
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn peer_is_owner_accepts_same_user() {
+    let (a, _b) = tokio::net::UnixStream::pair().unwrap();
+    assert!(peer_is_owner(&a));
 }
 
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Returns `true` when macOS is currently in Dark appearance.
-fn system_prefers_dark() -> bool {
-    std::process::Command::new("defaults")
-        .args(["read", "-g", "AppleInterfaceStyle"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "Dark")
-        .unwrap_or(false)
+impl ConfigEditor {
+    /// Shows `msg` in the status bar; it fades after three seconds.
+    fn set_status(&mut self, msg: impl Into<String>, is_error: bool) {
+        self.status = msg.into();
+        self.status_is_error = is_error;
+        self.status_timestamp = Some(std::time::Instant::now());
+    }
 }
 
 fn validate_listen_ip(s: &str) -> Option<String> {

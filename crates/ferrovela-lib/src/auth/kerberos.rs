@@ -7,23 +7,15 @@ use log::debug;
 
 use super::{AuthSession, UpstreamAuthenticator};
 
-pub struct KerberosAuthenticator {
-    service_name: String,
-}
-
-impl KerberosAuthenticator {
-    pub fn new(proxy_host: &str) -> Self {
-        // RFC 4559: "The service name for the GSS_Init_sec_context call is 'HTTP@<hostname>'."
-        // We assume proxy_host is just the hostname (no port).
-        let service_name = format!("HTTP@{}", proxy_host);
-        Self { service_name }
-    }
-}
+pub struct KerberosAuthenticator;
 
 impl UpstreamAuthenticator for KerberosAuthenticator {
-    fn create_session(&self) -> Box<dyn AuthSession> {
+    fn create_session(&self, proxy_host: &str) -> Box<dyn AuthSession> {
+        // RFC 4559: "The service name for the GSS_Init_sec_context call is 'HTTP@<hostname>'."
+        // The SPN is built per session because a PAC file may select a
+        // different upstream proxy for every request.
         Box::new(KerberosSession {
-            service_name: self.service_name.clone(),
+            service_name: format!("HTTP@{}", proxy_host),
             ctx: None,
         })
     }
@@ -41,10 +33,10 @@ impl AuthSession for KerberosSession {
                 None
             } else if let Some(stripped) = c.strip_prefix("Negotiate ") {
                 Some(BASE64_STANDARD.decode(stripped.trim())?)
-            } else if c.trim() == "Negotiate" {
-                None
             } else {
-                return Err(anyhow::anyhow!("Invalid challenge format: {}", c));
+                // Bare "Negotiate", or another scheme listed first when the
+                // proxy offers several (NTLM, Basic): start without a token.
+                None
             }
         } else {
             None

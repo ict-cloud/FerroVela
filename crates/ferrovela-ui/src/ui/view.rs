@@ -113,7 +113,6 @@ impl ConfigEditor {
         .spacing(8)
         .align_y(Alignment::Center);
 
-        let is_dark = matches!(self.appearance, Theme::Dark);
         let query = self.log_search.to_lowercase();
 
         let mut lines_col = Column::new().spacing(1).padding([0, 4]);
@@ -121,15 +120,15 @@ impl ConfigEditor {
             if !query.is_empty() && !line.to_lowercase().contains(&query) {
                 continue;
             }
-            let color = log_line_color(line, is_dark);
-            let mut t = text(line)
-                .font(iced::font::Font::MONOSPACE)
-                .size(12)
-                .width(Length::Fill);
-            if let Some(c) = color {
-                t = t.color(c);
-            }
-            lines_col = lines_col.push(t);
+            lines_col = lines_col.push(
+                text(line)
+                    .font(iced::font::Font::MONOSPACE)
+                    .size(12)
+                    .width(Length::Fill)
+                    .style(move |theme: &Theme| iced::widget::text::Style {
+                        color: log_line_color(line, theme.extended_palette().is_dark),
+                    }),
+            );
         }
 
         let log_scroll = scrollable(lines_col)

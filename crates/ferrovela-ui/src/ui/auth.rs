@@ -96,7 +96,10 @@ mod native {
                 std::ptr::null_mut(),
             );
 
-            AuthorizationFree(auth_ref, K_AUTHORIZATION_FLAG_DESTROY_RIGHTS);
+            let freed = AuthorizationFree(auth_ref, K_AUTHORIZATION_FLAG_DESTROY_RIGHTS);
+            if freed != ERR_AUTHORIZATION_SUCCESS {
+                log::debug!("AuthorizationFree failed: OSStatus {freed}");
+            }
 
             status == ERR_AUTHORIZATION_SUCCESS
         }

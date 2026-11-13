@@ -23,7 +23,7 @@ impl BasicAuthenticator {
 }
 
 impl UpstreamAuthenticator for BasicAuthenticator {
-    fn create_session(&self) -> Box<dyn AuthSession> {
+    fn create_session(&self, _proxy_host: &str) -> Box<dyn AuthSession> {
         Box::new(BasicSession {
             encoded: Arc::clone(&self.encoded),
         })

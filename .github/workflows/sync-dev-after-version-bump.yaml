@@ -1,0 +1,78 @@
+name: "Sync dev after version bump"
+
+# Runs on every push to master, but only does work when the push changed the
+# `version` in Cargo.toml (i.e. a version bump landed on master). It then merges
+# master into dev so that dev contains the bump commit again.
+
+on:
+  push:
+    branches:
+      - "master"
+
+# Serialize runs so two quick bumps cannot race on the dev branch.
+concurrency:
+  group: sync-dev-after-version-bump
+  cancel-in-progress: false
+
+jobs:
+  sync-dev:
+    name: "Merge master into dev"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Check whether the version changed
+        id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          ZERO="0000000000000000000000000000000000000000"
+          if [ "$BEFORE" = "$ZERO" ]; then
+            echo "Branch created by this push, nothing to compare. Skipping."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version_of() {
+            git show "$1:Cargo.toml" | awk -F '"' '/^version/ {print $2; exit}'
+          }
+          OLD=$(version_of "$BEFORE")
+          NEW=$(version_of "$AFTER")
+          echo "Version: ${OLD:-<none>} -> ${NEW:-<none>}"
+          if [ -n "$NEW" ] && [ "$OLD" != "$NEW" ]; then
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+            echo "NEW_VERSION=$NEW" >> "$GITHUB_ENV"
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            echo "No version change, nothing to sync."
+          fi
+
+      - name: Merge master into dev
+        if: steps.check.outputs.bumped == 'true'
+        env:
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin dev
+          git checkout -B dev origin/dev
+
+          if git merge-base --is-ancestor "$AFTER" dev; then
+            echo "dev already contains $AFTER, nothing to do."
+            exit 0
+          fi
+
+          # Fails loudly on conflicts; resolve manually on dev in that case.
+          git merge --no-edit -m "chore: sync master ${NEW_VERSION} into dev" "$AFTER"
+          git push origin dev
+
+      - name: Summary
+        if: steps.check.outputs.bumped == 'true'
+        run: echo "Synced master ${NEW_VERSION} into dev." >> "$GITHUB_STEP_SUMMARY"
